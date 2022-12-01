@@ -51,7 +51,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
 	
 	// Logger
 	UNICODE_STRING str;
-	WCHAR filepath[100]= L"\\??\\\\C:\\Data\\USERS\\Public\\Documents\\driver.log";
+	WCHAR filepath[100]= L"\\??\\\\C:\\Data\\USERS\\Public\\Documents\\wp81wiimote.log";
 	RtlInitUnicodeString(&str, filepath);
 	OBJECT_ATTRIBUTES obj;	
 	InitializeObjectAttributes(&obj, &str, OBJ_CASE_INSENSITIVE, NULL, NULL);
@@ -60,6 +60,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
 	status = ZwCreateFile(&hLogFile, FILE_GENERIC_WRITE, &obj, &isb, 0, FILE_ATTRIBUTE_NORMAL,FILE_SHARE_WRITE, FILE_OVERWRITE_IF,	FILE_RANDOM_ACCESS|FILE_NON_DIRECTORY_FILE|FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
 	
 	write2File(hLogFile, "DriverEntry\n");
+	ZwClose(hLogFile);
 
 	// Driver
 
@@ -69,7 +70,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
 	DriverObject->MajorFunction[IRP_MJ_CLOSE] = WiimoteCreateClose;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = WiimoteDeviceControl;
 
-	UNICODE_STRING devName = RTL_CONSTANT_STRING(L"\\Device\\Wiimote");
+	UNICODE_STRING devName = RTL_CONSTANT_STRING(L"\\Device\\WP81Wiimote");
 	PDEVICE_OBJECT DeviceObject;
 	status = IoCreateDevice(DriverObject, 0, &devName, FILE_DEVICE_UNKNOWN, 0, FALSE, &DeviceObject);
 	if (!NT_SUCCESS(status)) {
@@ -78,7 +79,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
 		return status;
 	}
 
-	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\Wiimote");
+	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\WP81Wiimote");
 	status = IoCreateSymbolicLink(&symLink, &devName);
 	if (!NT_SUCCESS(status)) {
 		write2File(hLogFile,"Failed to create symbolic link (0x%08X)\n", status);
@@ -87,13 +88,11 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
 		return status;
 	}
 
-	ZwClose(hLogFile);
-
 	return STATUS_SUCCESS;
 }
 
 void WiimoteUnload(_In_ PDRIVER_OBJECT DriverObject) {
-	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\Wiimote");
+	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\WP81Wiimote");
 	// delete symbolic link
 	IoDeleteSymbolicLink(&symLink);
 
@@ -138,26 +137,20 @@ NTSTATUS WiimoteDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 }
 
 // int main(int argc, const char* argv[]) {
-	// if (argc < 3) {
-		// printf("Usage: Booster <threadid> <priority>\n");
-		// return 0;
-	// }
 
-	// HANDLE hDevice = CreateFile(L"\\\\.\\PriorityBooster", GENERIC_WRITE, FILE_SHARE_WRITE,
+	// HANDLE hDevice = CreateFile(L"\\\\.\\WP81Wiimote", GENERIC_WRITE, FILE_SHARE_WRITE,
 		// nullptr, OPEN_EXISTING, 0, nullptr);
 	// if (hDevice == INVALID_HANDLE_VALUE)
 		// return Error("Failed to open device");
 
-	// ThreadData data;
-	// data.ThreadId = atoi(argv[1]);
-	// data.Priority = atoi(argv[2]);
+	// DWORD data = 0;
 
 	// DWORD returned;
-	// BOOL success = DeviceIoControl(hDevice, IOCTL_PRIORITY_BOOSTER_SET_PRIORITY, &data, sizeof(data), nullptr, 0, &returned, nullptr);
+	// BOOL success = DeviceIoControl(hDevice, IOCTL_WIIMOTE_TEST, &data, sizeof(data), nullptr, 0, &returned, nullptr);
 	// if (success)
-		// printf("Priority change succeeded!\n");
+		// printf("Device call succeeded!\n");
 	// else
-		// Error("Priority change failed!");
+		// Error("Device call failed!");
 
 	// CloseHandle(hDevice);
 // }
