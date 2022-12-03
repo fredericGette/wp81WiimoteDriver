@@ -10,4 +10,11 @@
     <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <TextBlock x:Name="TextTest" HorizontalAlignment="Left" TextWrapping="Wrap" FontSize="18"/>
     </Grid>
+
+    <Page.BottomAppBar>
+        <CommandBar>
+            <AppBarButton x:Name="InstallAppBarButton" Tag="Install" Label="Install" Icon="Download" Click="AppBarButton_Click"/>
+            <AppBarButton x:Name="RunAppBarButton" Tag="Run" Label="Trigger" Icon="Play" Click="AppBarButton_Click"/>
+        </CommandBar>
+    </Page.BottomAppBar>
 </Page>

@@ -44,6 +44,30 @@
                                         SERVICE_INTERROGATE          | \
                                         SERVICE_USER_DEFINED_CONTROL)
 
+//
+// Define the method codes for how buffers are passed for I/O and FS controls
+//
+
+#define METHOD_BUFFERED                 0
+#define METHOD_IN_DIRECT                1
+#define METHOD_OUT_DIRECT               2
+#define METHOD_NEITHER                  3
+
+#define FILE_ANY_ACCESS                 0
+#define FILE_SPECIAL_ACCESS    (FILE_ANY_ACCESS)
+#define FILE_READ_ACCESS          ( 0x0001 )    // file & pipe
+#define FILE_WRITE_ACCESS         ( 0x0002 )    // file & pipe
+
+//
+// Macro definition for defining IOCTL and FSCTL function control codes.  Note
+// that function codes 0-2047 are reserved for Microsoft Corporation, and
+// 2048-4095 are reserved for customers.
+//
+
+#define CTL_CODE( DeviceType, Function, Method, Access ) (                 \
+    ((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method) \
+)
+
 typedef ACCESS_MASK REGSAM;
 
 typedef struct _STARTUPINFOA {
@@ -97,6 +121,8 @@ extern "C" {
 
 	WINBASEAPI BOOL WINAPI CreateProcessA(LPCSTR lpApplicationName, LPSTR lpCommandLine, LPSECURITY_ATTRIBUTES lpProcessAttributes, LPSECURITY_ATTRIBUTES lpThreadAttributes, BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment, LPCSTR lpCurrentDirectory, LPSTARTUPINFOA lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation);
 	WINBASEAPI BOOL WINAPI CloseHandle(HANDLE hObject);
+
+	WINBASEAPI BOOL WINAPI DeviceIoControl(HANDLE hDevice, DWORD dwIoControlCode, LPVOID lpInBuffer, DWORD nInBufferSize, LPVOID lpOutBuffer, DWORD nOutBufferSize, LPDWORD lpBytesReturned, LPOVERLAPPED lpOverlapped);
 
 	WINBASEAPI BOOL	WINAPI CopyFileW(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, BOOL bFailIfExists);
 
@@ -154,6 +180,7 @@ public:
 	WIN32API_DEFINE_PROC(WriteFile);
 	WIN32API_DEFINE_PROC(CreateProcessA);
 	WIN32API_DEFINE_PROC(CloseHandle);
+	WIN32API_DEFINE_PROC(DeviceIoControl);
 	const HMODULE m_Kernel32legacy;
 	WIN32API_DEFINE_PROC(CopyFileW);
 	const HMODULE m_SecHost;
@@ -179,6 +206,7 @@ public:
 		WIN32API_INIT_PROC(m_Kernelbase, WriteFile),
 		WIN32API_INIT_PROC(m_Kernelbase, CreateProcessA),
 		WIN32API_INIT_PROC(m_Kernelbase, CloseHandle),
+		WIN32API_INIT_PROC(m_Kernelbase, DeviceIoControl),
 		m_Kernel32legacy(GetModuleHandleW(L"KERNEL32LEGACY.DLL")),
 		WIN32API_INIT_PROC(m_Kernel32legacy, CopyFileW),
 		m_SecHost(GetModuleHandleW(L"SECHOST.DLL")),

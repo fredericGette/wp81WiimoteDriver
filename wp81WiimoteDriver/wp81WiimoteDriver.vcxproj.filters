@@ -46,6 +46,5 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Payload\wp81wiimote.sys" />
-    <None Include="Payload\ahcache.sys" />
   </ItemGroup>
 </Project>

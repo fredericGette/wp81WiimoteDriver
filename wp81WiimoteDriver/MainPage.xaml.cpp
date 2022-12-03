@@ -7,6 +7,10 @@
 #include "MainPage.xaml.h"
 #include "Win32Api.h"
 
+#define WIIMOTE_DEVICE 0x8000
+
+#define IOCTL_WIIMOTE_TEST CTL_CODE(WIIMOTE_DEVICE, 0x800, METHOD_NEITHER, FILE_ANY_ACCESS)
+
 using namespace wp81WiimoteDriver;
 
 using namespace Platform;
@@ -23,6 +27,8 @@ using namespace Windows::Storage;
 using namespace concurrency;
 
 // The Blank Page item template is documented at http://go.microsoft.com/fwlink/?LinkId=234238
+
+Win32Api win32Api;
 
 MainPage::MainPage()
 {
@@ -51,8 +57,23 @@ void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 {
 	(void) e;	// Unused parameter
 
-	Win32Api win32Api;
+}
 
+void wp81WiimoteDriver::MainPage::AppBarButton_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e)
+{
+	Button^ b = (Button^)sender;
+	if (b->Tag->ToString() == "Install")
+	{
+		Install();
+	}
+	else if (b->Tag->ToString() == "Run")
+	{
+		Run();
+	}
+}
+
+void wp81WiimoteDriver::MainPage::Install()
+{
 	TextTest->Text = L"Create driver WP81Wiimote in registry... ";
 
 	HKEY HKEY_LOCAL_MACHINE = (HKEY)0x80000002;
@@ -79,7 +100,7 @@ void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 	PBYTE ValueData = new BYTE[256];
 
 	ZeroMemory(ValueData, 256);
-	wcscpy_s((WCHAR*)ValueData, 256, L"WP81 Wiimote driver");
+	wcscpy_s((WCHAR*)ValueData, 128, L"WP81 Wiimote driver");
 	retCode = win32Api.RegSetValueExW(wp81driverKey, L"Description", NULL, REG_SZ, ValueData, 256);
 	if (retCode != ERROR_SUCCESS)
 	{
@@ -89,7 +110,7 @@ void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 	}
 
 	ZeroMemory(ValueData, 256);
-	wcscpy_s((WCHAR*)ValueData, 256, L"Wp81Wiimote");
+	wcscpy_s((WCHAR*)ValueData, 128, L"Wp81Wiimote");
 	retCode = win32Api.RegSetValueExW(wp81driverKey, L"DisplayName", NULL, REG_SZ, ValueData, 256);
 	if (retCode != ERROR_SUCCESS)
 	{
@@ -143,7 +164,7 @@ void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 
 	TextTest->Text += L"OK\n";
 
-	TextTest->Text += L"Update driver...";
+	TextTest->Text += L"Install/Update driver...";
 
 	Uri^ uri = ref new Uri("ms-appx:///Payload/wp81wiimote.sys");
 	create_task(StorageFile::GetFileFromApplicationUriAsync(uri)).then([=](task<StorageFile^> t)
@@ -158,7 +179,6 @@ void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 				ref new Windows::UI::Core::DispatchedHandler([=]()
 			{
 				TextTest->Text += L"Failed\n";
-				TextTest->Text += L"Driver may already be installed and running.\n";
 			})));
 		}
 		else
@@ -171,4 +191,34 @@ void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 			})));
 		}
 	});
+}
+
+void wp81WiimoteDriver::MainPage::Run()
+{
+	TextTest->Text += L"Calling device...";
+	HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WP81Wiimote", GENERIC_WRITE, FILE_SHARE_WRITE,
+	nullptr, OPEN_EXISTING, 0, nullptr);
+	if (hDevice == INVALID_HANDLE_VALUE)
+	{
+		debug(L"Failed to open device.");
+		TextTest->Text += L"Failed to open device.\n";
+		return;
+	}
+
+	DWORD data = 0;
+
+	DWORD returned;
+	BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_TEST, &data, sizeof(data), nullptr, 0, &returned, nullptr);
+	if (success)
+	{
+		debug(L"Device call succeeded!\n");
+		TextTest->Text += L"succeeded!\n";
+	}
+	else
+	{
+		debug(L"Device call failed!\n");
+		TextTest->Text += L"failed!\n";
+	}
+
+	CloseHandle(hDevice);
 }

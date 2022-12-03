@@ -24,6 +24,18 @@ NTSTATUS WiimoteDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
 
 // Logger
 
+void openLogFile()
+{
+	UNICODE_STRING str;
+	WCHAR filepath[100]= L"\\??\\\\C:\\Data\\USERS\\Public\\Documents\\wp81wiimote.log";
+	RtlInitUnicodeString(&str, filepath);
+	OBJECT_ATTRIBUTES obj;	
+	InitializeObjectAttributes(&obj, &str, OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+	IO_STATUS_BLOCK isb;
+	NTSTATUS status = ZwCreateFile(&hLogFile, FILE_GENERIC_WRITE, &obj, &isb, 0, FILE_ATTRIBUTE_NORMAL,FILE_SHARE_WRITE, FILE_OPEN_IF,	FILE_RANDOM_ACCESS|FILE_NON_DIRECTORY_FILE|FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
+}
+
 void write2File(HANDLE hFile, char *format, ...)
 {
 	va_list args;
@@ -32,10 +44,15 @@ void write2File(HANDLE hFile, char *format, ...)
 	char buffer[1000];
 	RtlStringCchVPrintfA(buffer, sizeof(buffer), format, args);
 	
+	LARGE_INTEGER ByteOffset;
+
+	ByteOffset.HighPart = -1;
+	ByteOffset.LowPart = FILE_WRITE_TO_END_OF_FILE;
+	
 	size_t size;
 	RtlStringCbLengthA(buffer, sizeof(buffer), &size);
 	IO_STATUS_BLOCK isb;
-	ZwWriteFile(hFile, NULL, NULL, NULL, &isb, buffer, size, NULL, NULL);
+	ZwWriteFile(hFile, NULL, NULL, NULL, &isb, buffer, size, &ByteOffset, NULL);
 	
 	va_end(args);
 }
@@ -50,17 +67,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
 	NTSTATUS status;
 	
 	// Logger
-	UNICODE_STRING str;
-	WCHAR filepath[100]= L"\\??\\\\C:\\Data\\USERS\\Public\\Documents\\wp81wiimote.log";
-	RtlInitUnicodeString(&str, filepath);
-	OBJECT_ATTRIBUTES obj;	
-	InitializeObjectAttributes(&obj, &str, OBJ_CASE_INSENSITIVE, NULL, NULL);
-
-	IO_STATUS_BLOCK isb;
-	status = ZwCreateFile(&hLogFile, FILE_GENERIC_WRITE, &obj, &isb, 0, FILE_ATTRIBUTE_NORMAL,FILE_SHARE_WRITE, FILE_OVERWRITE_IF,	FILE_RANDOM_ACCESS|FILE_NON_DIRECTORY_FILE|FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
-	
-	write2File(hLogFile, "DriverEntry\n");
-	ZwClose(hLogFile);
+	openLogFile();
+	write2File(hLogFile, "Begin DriverEntry\n");
 
 	// Driver
 
@@ -88,31 +96,53 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
 		return status;
 	}
 
+	write2File(hLogFile, "End DriverEntry\n");
+	ZwClose(hLogFile);
 	return STATUS_SUCCESS;
 }
 
 void WiimoteUnload(_In_ PDRIVER_OBJECT DriverObject) {
+	// Logger
+	openLogFile();
+	write2File(hLogFile, "Begin WiimoteUnload\n");
+	
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\WP81Wiimote");
 	// delete symbolic link
 	IoDeleteSymbolicLink(&symLink);
 
 	// delete device object
 	IoDeleteDevice(DriverObject->DeviceObject);
+	
+	write2File(hLogFile, "End WiimoteUnload\n");
+	ZwClose(hLogFile);
 }
 
 _Use_decl_annotations_
 NTSTATUS WiimoteCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	UNREFERENCED_PARAMETER(DeviceObject);
 
+	// Logger
+	openLogFile();
+	write2File(hLogFile, "Begin WiimoteCreateClose\n");
+
+
 	Irp->IoStatus.Status = STATUS_SUCCESS;
 	Irp->IoStatus.Information = 0;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	
+	write2File(hLogFile, "End WiimoteCreateClose\n");
+	ZwClose(hLogFile);
+	
 	return STATUS_SUCCESS;
 }
 
 _Use_decl_annotations_
 NTSTATUS WiimoteDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	UNREFERENCED_PARAMETER(DeviceObject);
+	
+	// Logger
+	openLogFile();
+	write2File(hLogFile, "Begin WiimoteDeviceControl\n");
 	
 	// get our IO_STACK_LOCATION
 	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
@@ -122,6 +152,7 @@ NTSTATUS WiimoteDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		case IOCTL_WIIMOTE_TEST:
 		{
 			// do the work
+			write2File(hLogFile, "Received IOCTL_WIIMOTE_TEST\n");
 			break;
 		}
 
@@ -133,24 +164,9 @@ NTSTATUS WiimoteDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	Irp->IoStatus.Status = status;
 	Irp->IoStatus.Information = 0;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+	
+	write2File(hLogFile, "End WiimoteDeviceControl\n");
+	ZwClose(hLogFile);
+	
 	return status;
 }
-
-// int main(int argc, const char* argv[]) {
-
-	// HANDLE hDevice = CreateFile(L"\\\\.\\WP81Wiimote", GENERIC_WRITE, FILE_SHARE_WRITE,
-		// nullptr, OPEN_EXISTING, 0, nullptr);
-	// if (hDevice == INVALID_HANDLE_VALUE)
-		// return Error("Failed to open device");
-
-	// DWORD data = 0;
-
-	// DWORD returned;
-	// BOOL success = DeviceIoControl(hDevice, IOCTL_WIIMOTE_TEST, &data, sizeof(data), nullptr, 0, &returned, nullptr);
-	// if (success)
-		// printf("Device call succeeded!\n");
-	// else
-		// Error("Device call failed!");
-
-	// CloseHandle(hDevice);
-// }
