@@ -128,7 +128,8 @@ void wp81WiimoteDriver::MainPage::Install()
 		return;
 	}
 
-	*(PDWORD)ValueData = 1; // System: Loaded by I/O subsystem. Specifies that the driver is loaded at kernel initialization.
+	//*(PDWORD)ValueData = 1; // System: Loaded by I/O subsystem. Specifies that the driver is loaded at kernel initialization.
+	*(PDWORD)ValueData = 3; // SERVICE_DEMAND_START (started by the PlugAndPlay Manager)
 	retCode = win32Api.RegSetValueExW(wp81driverKey, L"Start", NULL, REG_DWORD, ValueData, 4);
 	if (retCode != ERROR_SUCCESS)
 	{
@@ -158,6 +159,33 @@ void wp81WiimoteDriver::MainPage::Install()
 	if (retCode != ERROR_SUCCESS)
 	{
 		debug(L"Error RegCloseKey 'servicesKey': %d\n", retCode);
+		TextTest->Text += L"Failed\n";
+		return;
+	}
+
+	HKEY pdoKey = {};
+	retCode = win32Api.RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"System\\CurrentControlSet\\Enum\\BTHENUM\\Dev_E0E751333260\\6&23f92770&0&BluetoothDevice_E0E751333260", 0, KEY_ALL_ACCESS, &pdoKey);
+	if (retCode != ERROR_SUCCESS)
+	{
+		debug(L"Error RegOpenKeyExW : %d\n", retCode);
+		TextTest->Text += L"Failed\n";
+		return;
+	}
+
+	ZeroMemory(ValueData, 256);
+	wcscpy_s((WCHAR*)ValueData, 128, L"wp81wiimote");
+	retCode = win32Api.RegSetValueExW(pdoKey, L"Service", NULL, REG_SZ, ValueData, 256);
+	if (retCode != ERROR_SUCCESS)
+	{
+		debug(L"Error RegSetValueExW 'Service': %d\n", retCode);
+		TextTest->Text += L"Failed\n";
+		return;
+	}
+
+	retCode = win32Api.RegCloseKey(pdoKey);
+	if (retCode != ERROR_SUCCESS)
+	{
+		debug(L"Error RegCloseKey 'pdoKey': %d\n", retCode);
 		TextTest->Text += L"Failed\n";
 		return;
 	}
@@ -195,6 +223,20 @@ void wp81WiimoteDriver::MainPage::Install()
 
 void wp81WiimoteDriver::MainPage::Run()
 {
+	// Get handle of the first local bluetooth radio
+	BLUETOOTH_FIND_RADIO_PARAMS radio_params;
+	ZeroMemory(&radio_params, sizeof(radio_params));
+	radio_params.dwSize = sizeof(BLUETOOTH_FIND_RADIO_PARAMS);
+	HANDLE radio_handle;
+	HBLUETOOTH_RADIO_FIND radio_search_result = win32Api.BluetoothFindFirstRadio(&radio_params, &radio_handle);
+	if (radio_search_result == NULL)
+	{
+		debug(L"Error BluetoothFindFirstRadio: %d (259=ERROR_NO_MORE_ITEMS)\n", GetLastError());
+		throw "Please check that Bluetooth is on.";
+	}
+	debug(L"radio_search_result=0x%08X radio_handle=0x%08X\n", radio_search_result, radio_handle);
+
+
 	TextTest->Text += L"Calling device...";
 	HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WP81Wiimote", GENERIC_WRITE, FILE_SHARE_WRITE,
 	nullptr, OPEN_EXISTING, 0, nullptr);
@@ -208,7 +250,7 @@ void wp81WiimoteDriver::MainPage::Run()
 	DWORD data = 0;
 
 	DWORD returned;
-	BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_TEST, &data, sizeof(data), nullptr, 0, &returned, nullptr);
+	BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_TEST, &radio_handle, sizeof(radio_handle), nullptr, 0, &returned, nullptr);
 	if (success)
 	{
 		debug(L"Device call succeeded!\n");

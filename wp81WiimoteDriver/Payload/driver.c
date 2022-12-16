@@ -11,21 +11,73 @@
 // ren driver.sys ahcache.sys
 //
 // "C:\Program Files (x86)\Windows Kits\8.1\bin\x86\signtool.exe" sign /ph /fd "sha256" /sha1 "38DD26500D3D48F0E8C6F73F58C5F08BE77F4B7D" ahcache.sys
+//
+// Bluetooth profile driver
+// IoAttachDeviceToDeviceStack
+// WdfFdoInitSetFilter
+// You don't need to query for any interfaces to use
+// IOCTL_INTERNAL_BTH_SUBMIT_BRB. What l2cap functions do you want to
+// test? Any particular protocols or just l2cap? You cannot arbitrarily
+// send l2cap connect requests to bthport, you have to do it through an
+// enumerated PDO which would be enumerated for a specific remote device's
+// protocol.
+// https://github.com/Microsoft/Windows-driver-samples/tree/main/setup/devcon
+// HKLM\System\CurrentControlSet\Enum\BTHENUM\Dev_E0E751333260\6&23f92770&0&BluetoothDevice_E0E751333260
+													// {
+															// "name": "UpperFilters",
+															// "value_type": "REG_MULTI_SZ",
+															// "value": [
+																// "mshidkmdf"
+															// ]
+														// }
+														// {
+															// "name": "Service",
+															// "value_type": "REG_SZ",
+															// "value": "RFCOMM"
+														// },														
+// https://astralvx.com/pnp-manager-device-enumeration/
+// http://sviluppomobile.blogspot.com/2012/11/bluetooth-services-uuids.html		
+// https://learn.microsoft.com/en-us/windows-hardware/drivers/bluetooth/installing-a-bluetooth-device
+// https://learn.microsoft.com/en-us/windows-hardware/drivers/bluetooth/using-the-bluetooth-driver-stack	
+// https://www.osr.com/nt-insider/2020-issue1/a-generic-device-class-filter-using-wdf/
+// {2BD67D8B-8BEB-48D5-87E0-6CDA3428040A} = Device properties
+// {3b2ce006-5e61-4fde-bab8-9b8aac9b26df} = System.Devices.Aep.AepId (Identity of the Device Association Endpoint)		
+// {540b947e-8b40-45bc-a8a2-6a0b894cbda2} = System.Devices.Present
+// {78c34fc8-104a-4aca-9ea4-524d52996e57} = System.Devices.DeviceDescription2
+// {80497100-8c73-48b9-aad9-ce387e19c56e} = PKEY_Device_Reported
+// {83da6326-97a6-4088-9453-a1923f573b29} = System.Devices.IsSoftwareInstalling		
+// {a35996ab-11cf-4935-8b61-a6761081ecdf} = System.Devices.Aep.Category
+// {a8b865dd-2e3d-4094-ad97-e593a70c75d6} =	PKEY_Device_GenericDriverInstalled	
+// HardwareID = BTHENUM\\Dev_E0E751333260
+// ClassGuid = {e0cbf06c-cd8b-4647-bb8a-263b43f0f974} Class = Bluetooth (This class includes all Bluetooth devices.)
+// CompatibleIDs = BTHENUM\\{00001124-0000-1000-8000-00805f9b34fb}
+// 						DeviceInstance = BTHENUM\\Dev_E0E751333260\\6&23f92770&0&BluetoothDevice_E0E751333260
+// ServiceDiscovery 	DeviceInstance = BTHENUM\\{00001000-0000-1000-8000-00805f9b34fb}_LOCALMFG&001d\\6&23f92770&0&E0E751333260_C00000000
+// HumanInterfaceDevice DeviceInstance = BTHENUM\\{00001124-0000-1000-8000-00805f9b34fb}_LOCALMFG&001d\\6&23f92770&0&E0E751333260_C00000000
+// PnPInformation 		DeviceInstance = BTHENUM\\{00001200-0000-1000-8000-00805f9b34fb}_LOCALMFG&001d\\6&23f92770&0&E0E751333260_C00000000
+//
+// driver start = 3 (SERVICE_DEMAND_START)
+
+			
 
 #include "driver.h"
-
-HANDLE hLogFile;
+#include <initguid.h>
+#include "hidclass.h"
+#include "Wdmguid.h"
 
 // prototypes
 
 void WiimoteUnload(_In_ PDRIVER_OBJECT DriverObject);
 NTSTATUS WiimoteCreateClose(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
 NTSTATUS WiimoteDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
+DRIVER_NOTIFICATION_CALLBACK_ROUTINE MyCallbackRoutine;
 
 // Logger
 
-void openLogFile()
+HANDLE openLogFile()
 {
+	HANDLE hLogFile;
+	
 	UNICODE_STRING str;
 	WCHAR filepath[100]= L"\\??\\\\C:\\Data\\USERS\\Public\\Documents\\wp81wiimote.log";
 	RtlInitUnicodeString(&str, filepath);
@@ -34,15 +86,19 @@ void openLogFile()
 
 	IO_STATUS_BLOCK isb;
 	NTSTATUS status = ZwCreateFile(&hLogFile, FILE_GENERIC_WRITE, &obj, &isb, 0, FILE_ATTRIBUTE_NORMAL,FILE_SHARE_WRITE, FILE_OPEN_IF,	FILE_RANDOM_ACCESS|FILE_NON_DIRECTORY_FILE|FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
+	
+	return hLogFile;
 }
 
-void write2File(HANDLE hFile, char *format, ...)
+void debug(char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
 
 	char buffer[1000];
 	RtlStringCchVPrintfA(buffer, sizeof(buffer), format, args);
+	
+	HANDLE hLogFile = openLogFile();
 	
 	LARGE_INTEGER ByteOffset;
 
@@ -52,7 +108,9 @@ void write2File(HANDLE hFile, char *format, ...)
 	size_t size;
 	RtlStringCbLengthA(buffer, sizeof(buffer), &size);
 	IO_STATUS_BLOCK isb;
-	ZwWriteFile(hFile, NULL, NULL, NULL, &isb, buffer, size, &ByteOffset, NULL);
+	ZwWriteFile(hLogFile, NULL, NULL, NULL, &isb, buffer, size, &ByteOffset, NULL);
+	
+	ZwClose(hLogFile);
 	
 	va_end(args);
 }
@@ -66,9 +124,7 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
 	
 	NTSTATUS status;
 	
-	// Logger
-	openLogFile();
-	write2File(hLogFile, "Begin DriverEntry\n");
+	debug("Begin DriverEntry\n");
 
 	// Driver
 
@@ -82,29 +138,24 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
 	PDEVICE_OBJECT DeviceObject;
 	status = IoCreateDevice(DriverObject, 0, &devName, FILE_DEVICE_UNKNOWN, 0, FALSE, &DeviceObject);
 	if (!NT_SUCCESS(status)) {
-		write2File(hLogFile,"Failed to create device (0x%08X)\n", status);
-		ZwClose(hLogFile);
+		debug("Failed to create device (0x%08X)\n", status);
 		return status;
 	}
 
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\WP81Wiimote");
 	status = IoCreateSymbolicLink(&symLink, &devName);
 	if (!NT_SUCCESS(status)) {
-		write2File(hLogFile,"Failed to create symbolic link (0x%08X)\n", status);
+		debug("Failed to create symbolic link (0x%08X)\n", status);
 		IoDeleteDevice(DeviceObject);
-		ZwClose(hLogFile);
 		return status;
 	}
 
-	write2File(hLogFile, "End DriverEntry\n");
-	ZwClose(hLogFile);
+	debug("End DriverEntry\n");
 	return STATUS_SUCCESS;
 }
 
 void WiimoteUnload(_In_ PDRIVER_OBJECT DriverObject) {
-	// Logger
-	openLogFile();
-	write2File(hLogFile, "Begin WiimoteUnload\n");
+	debug("Begin WiimoteUnload\n");
 	
 	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\WP81Wiimote");
 	// delete symbolic link
@@ -113,36 +164,29 @@ void WiimoteUnload(_In_ PDRIVER_OBJECT DriverObject) {
 	// delete device object
 	IoDeleteDevice(DriverObject->DeviceObject);
 	
-	write2File(hLogFile, "End WiimoteUnload\n");
-	ZwClose(hLogFile);
+	debug("End WiimoteUnload\n");
 }
 
 _Use_decl_annotations_
 NTSTATUS WiimoteCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	UNREFERENCED_PARAMETER(DeviceObject);
 
-	// Logger
-	openLogFile();
-	write2File(hLogFile, "Begin WiimoteCreateClose\n");
-
+	debug("Begin WiimoteCreateClose\n");
 
 	Irp->IoStatus.Status = STATUS_SUCCESS;
 	Irp->IoStatus.Information = 0;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	
-	write2File(hLogFile, "End WiimoteCreateClose\n");
-	ZwClose(hLogFile);
+	debug("End WiimoteCreateClose\n");
 	
 	return STATUS_SUCCESS;
 }
 
 _Use_decl_annotations_
 NTSTATUS WiimoteDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	UNREFERENCED_PARAMETER(DeviceObject);
+	//UNREFERENCED_PARAMETER(DeviceObject);
 	
-	// Logger
-	openLogFile();
-	write2File(hLogFile, "Begin WiimoteDeviceControl\n");
+	debug("Begin WiimoteDeviceControl\n");
 	
 	// get our IO_STACK_LOCATION
 	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
@@ -152,7 +196,62 @@ NTSTATUS WiimoteDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 		case IOCTL_WIIMOTE_TEST:
 		{
 			// do the work
-			write2File(hLogFile, "Received IOCTL_WIIMOTE_TEST\n");
+			debug("Received IOCTL_WIIMOTE_TEST\n");
+			
+			HANDLE *pInputBuffer = (HANDLE*)stack->Parameters.DeviceIoControl.Type3InputBuffer; // METHOD_NEITHER
+			HANDLE radioHandle = *pInputBuffer;
+			debug("radioHandle=0x%08X\n",radioHandle);
+			
+			PVOID NotificationHandle = NULL;
+			NotificationHandle = ExAllocatePool(PagedPool,1024);
+			
+			NTSTATUS status2 = IoRegisterPlugPlayNotification (
+                EventCategoryDeviceInterfaceChange,
+                PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
+                (PVOID)&GUID_DEVINTERFACE_HID,
+                DeviceObject->DriverObject,
+                MyCallbackRoutine,
+                DeviceObject,
+                NotificationHandle);
+
+			if (!NT_SUCCESS(status2)) {
+				debug("status2=%d\n", status2);
+			}
+			debug("NotificationHandle=0x%08X\n", NotificationHandle);
+			ExFreePool(NotificationHandle);
+			
+			// PVOID radioObject;
+			// NTSTATUS status2 = ObReferenceObjectByHandle(radioHandle, GENERIC_ALL, NULL, UserMode, &radioObject, NULL);
+			// debug("status2=%d\n",status2);
+			// if (NT_SUCCESS(status2)) 
+			// {
+				// debug("radioObject=0x%08X\n",radioObject);
+				
+				// KEVENT hComplete;
+				// KeInitializeEvent(&hComplete,NotificationEvent,FALSE);
+
+				// BTH_LOCAL_RADIO_INFO radioInfo1;
+				// BTH_LOCAL_RADIO_INFO radioInfo2;
+
+				// IO_STATUS_BLOCK IoStatusBlock;				
+				// PIRP pIrp = IoBuildDeviceIoControlRequest(
+					// IOCTL_BTH_GET_LOCAL_INFO,
+					// radioObject,
+					// &radioInfo1,sizeof(radioInfo1),
+					// &radioInfo2,sizeof(radioInfo2),FALSE,&hComplete,&IoStatusBlock);
+				
+				// NTSTATUS status3 = IoCallDriver(radioObject,pIrp);
+				// debug(hLogFile, "status3=%d\n",status3);
+				// if (status3==STATUS_PENDING)
+					// KeWaitForSingleObject(&hComplete,Suspended,KernelMode,FALSE,NULL);
+				// else
+					// IoStatusBlock.Status=status3;
+				
+				// debug("flags1=0x%08X\n",radioInfo1.flags);
+				// debug("flags2=0x%08X\n",radioInfo2.flags);
+								
+				// ObDereferenceObject(radioObject);
+			// }
 			break;
 		}
 
@@ -165,8 +264,49 @@ NTSTATUS WiimoteDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
 	Irp->IoStatus.Information = 0;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 	
-	write2File(hLogFile, "End WiimoteDeviceControl\n");
-	ZwClose(hLogFile);
+	debug("End WiimoteDeviceControl\n");
+	
+	return status;
+}
+
+NTSTATUS MyCallbackRoutine(PVOID NotificationStructure, PVOID Context)
+{
+	//UNREFERENCED_PARAMETER(NotificationStructure);
+	UNREFERENCED_PARAMETER(Context);
+	
+	NTSTATUS status = STATUS_SUCCESS;
+	
+	debug("Begin MyCallbackRoutine\n");
+	
+	DEVICE_INTERFACE_CHANGE_NOTIFICATION* pNotification = NULL;
+    pNotification = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
+	
+	debug("pNotification->Version = %d\n",pNotification->Version);	
+	
+	GUID eventGuid = pNotification->Event;	
+	GUID interfaceClassGuid = pNotification->InterfaceClassGuid;	
+	
+	UNICODE_STRING evenGuidString;
+	RtlStringFromGUID(&eventGuid, &evenGuidString);
+	debug("pNotification->Event = %wZ",&evenGuidString);
+	RtlFreeUnicodeString(&evenGuidString);
+	if (RtlEqualMemory(&eventGuid, &GUID_DEVICE_INTERFACE_ARRIVAL, sizeof(GUID)))
+    {
+		debug("\tGUID_DEVICE_INTERFACE_ARRIVAL\n");
+	}
+	if (RtlEqualMemory(&eventGuid, &GUID_DEVICE_INTERFACE_REMOVAL, sizeof(GUID)))
+    {
+		debug("\tGUID_DEVICE_INTERFACE_REMOVAL\n");
+	}
+
+	UNICODE_STRING interfaceClassGuidString;
+	RtlStringFromGUID(&interfaceClassGuid, &interfaceClassGuidString);
+	debug("pNotification->InterfaceClassGuid = %wZ\n",&interfaceClassGuidString);
+	RtlFreeUnicodeString(&interfaceClassGuidString);
+
+	debug("pNotification->SymbolicLinkName = %wZ\n", pNotification->SymbolicLinkName);
+	
+	debug("End MyCallbackRoutine\n");
 	
 	return status;
 }

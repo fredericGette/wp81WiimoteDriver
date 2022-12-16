@@ -101,7 +101,14 @@ typedef struct _PROCESS_INFORMATION {
 DECLARE_HANDLE(SC_HANDLE);
 typedef SC_HANDLE   *LPSC_HANDLE;
 
+typedef struct _BLUETOOTH_FIND_RADIO_PARAMS {
+	DWORD   dwSize;             //  IN  sizeof this structure
+} BLUETOOTH_FIND_RADIO_PARAMS;
+
+typedef HANDLE      HBLUETOOTH_RADIO_FIND;
+
 extern "C" {
+	WINBASEAPI HMODULE WINAPI LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
 	WINBASEAPI HMODULE WINAPI GetModuleHandleW(LPCWSTR lpModuleName);
 
 	LONG WINAPI RegOpenKeyExW(HKEY, LPCWSTR, DWORD, REGSAM, PHKEY);
@@ -129,6 +136,8 @@ extern "C" {
 	WINADVAPI SC_HANDLE WINAPI OpenSCManagerW(LPCWSTR lpMachineName, LPCWSTR lpDatabaseName, DWORD dwDesiredAccess);
 	WINADVAPI SC_HANDLE WINAPI CreateServiceW(SC_HANDLE hSCManager, LPCWSTR lpServiceName, LPCWSTR lpDisplayName, DWORD dwDesiredAccess, DWORD dwServiceType, DWORD dwStartType, DWORD dwErrorControl, LPCWSTR lpBinaryPathName, LPCWSTR lpLoadOrderGroup, LPDWORD lpdwTagId, LPCWSTR lpDependencies, LPCWSTR lpServiceStartName, LPCWSTR lpPassword);
 	WINADVAPI BOOL WINAPI CloseServiceHandle(SC_HANDLE hSCObject);
+
+	HBLUETOOTH_RADIO_FIND WINAPI BluetoothFindFirstRadio(const BLUETOOTH_FIND_RADIO_PARAMS * pbtfrp, HANDLE * phRadio);
 }
 
 #define WIN32API_TOSTRING(x) #x
@@ -164,6 +173,7 @@ private:
 
 public:
 	const HMODULE m_Kernelbase;
+	WIN32API_DEFINE_PROC(LoadLibraryExW);
 	WIN32API_DEFINE_PROC(GetModuleHandleW);
 	WIN32API_DEFINE_PROC(RegOpenKeyExW);
 	WIN32API_DEFINE_PROC(RegQueryValueExW);
@@ -187,9 +197,12 @@ public:
 	WIN32API_DEFINE_PROC(OpenSCManagerW);
 	WIN32API_DEFINE_PROC(CreateServiceW);
 	WIN32API_DEFINE_PROC(CloseServiceHandle);
+	const HMODULE m_BluetoothApis;
+	WIN32API_DEFINE_PROC(BluetoothFindFirstRadio);
 
 	Win32Api()
 		: m_Kernelbase(GetKernelBase()),
+		WIN32API_INIT_PROC(m_Kernelbase, LoadLibraryExW),
 		WIN32API_INIT_PROC(m_Kernelbase, GetModuleHandleW),
 		WIN32API_INIT_PROC(m_Kernelbase, RegOpenKeyExW),
 		WIN32API_INIT_PROC(m_Kernelbase, RegQueryValueExW),
@@ -212,7 +225,9 @@ public:
 		m_SecHost(GetModuleHandleW(L"SECHOST.DLL")),
 		WIN32API_INIT_PROC(m_SecHost, OpenSCManagerW),
 		WIN32API_INIT_PROC(m_SecHost, CreateServiceW),
-		WIN32API_INIT_PROC(m_SecHost, CloseServiceHandle)
+		WIN32API_INIT_PROC(m_SecHost, CloseServiceHandle),
+		m_BluetoothApis(LoadLibraryExW(L"BLUETOOTHAPIS.DLL", NULL, NULL)),
+		WIN32API_INIT_PROC(m_BluetoothApis, BluetoothFindFirstRadio)
 	{};
 
 };
