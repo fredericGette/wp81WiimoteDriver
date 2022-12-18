@@ -56,24 +56,29 @@
 // HumanInterfaceDevice DeviceInstance = BTHENUM\\{00001124-0000-1000-8000-00805f9b34fb}_LOCALMFG&001d\\6&23f92770&0&E0E751333260_C00000000
 // PnPInformation 		DeviceInstance = BTHENUM\\{00001200-0000-1000-8000-00805f9b34fb}_LOCALMFG&001d\\6&23f92770&0&E0E751333260_C00000000
 //
+// HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices\e0e751333260
+																// {
+																	// "name": "COD",
+																	// "value_type": "REG_DWORD",
+																	// "value": "0x00002504"
+																// },
+// https://www.ampedrftech.com/cod.htm																
+// COD 0x00002504 = Service Class "Limited Discoverable Mode" Major Device Class "Peripheral" Minor Device Class "Not Keyboard / Not Pointing Device" "Joystick"
+//
 // driver start = 3 (SERVICE_DEMAND_START)
 
-			
+// https://resources.oreilly.com/examples/9780735618039/-/tree/master/9780735618039_files/Samples			
 
 #include "driver.h"
-#include <initguid.h>
-#include "hidclass.h"
-#include "Wdmguid.h"
 
 // prototypes
-
-void WiimoteUnload(_In_ PDRIVER_OBJECT DriverObject);
-NTSTATUS WiimoteCreateClose(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
-NTSTATUS WiimoteDeviceControl(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp);
-DRIVER_NOTIFICATION_CALLBACK_ROUTINE MyCallbackRoutine;
+void DriverUnload(PDRIVER_OBJECT DriverObject);
+NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT pdo);
+NTSTATUS DispatchPnp(PDEVICE_OBJECT fdo, PIRP Irp);
+NTSTATUS DispatchPower(PDEVICE_OBJECT fido, PIRP Irp);
+NTSTATUS DispatchWmi(PDEVICE_OBJECT fdo, PIRP Irp);
 
 // Logger
-
 HANDLE openLogFile()
 {
 	HANDLE hLogFile;
@@ -116,197 +121,328 @@ void debug(char *format, ...)
 }
 
 // DriverEntry
-// chapter 06, https://www.programcreek.com/cpp/?project_name=zodiacon%2Fwindowskernelprogrammingbook#
-
 NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath)
 {
 	UNREFERENCED_PARAMETER(RegistryPath);
-	
-	NTSTATUS status;
 	
 	debug("Begin DriverEntry\n");
 
 	// Driver
 
-	DriverObject->DriverUnload = WiimoteUnload;
+	DriverObject->DriverUnload = DriverUnload;
+	DriverObject->DriverExtension->AddDevice = AddDevice;
 
-	DriverObject->MajorFunction[IRP_MJ_CREATE] = WiimoteCreateClose;
-	DriverObject->MajorFunction[IRP_MJ_CLOSE] = WiimoteCreateClose;
-	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = WiimoteDeviceControl;
+	DriverObject->MajorFunction[IRP_MJ_PNP] = DispatchPnp;
+	DriverObject->MajorFunction[IRP_MJ_POWER] = DispatchPower;
+	DriverObject->MajorFunction[IRP_MJ_SYSTEM_CONTROL] = DispatchWmi; 
 
-	UNICODE_STRING devName = RTL_CONSTANT_STRING(L"\\Device\\WP81Wiimote");
-	PDEVICE_OBJECT DeviceObject;
-	status = IoCreateDevice(DriverObject, 0, &devName, FILE_DEVICE_UNKNOWN, 0, FALSE, &DeviceObject);
-	if (!NT_SUCCESS(status)) {
-		debug("Failed to create device (0x%08X)\n", status);
-		return status;
-	}
-
-	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\WP81Wiimote");
-	status = IoCreateSymbolicLink(&symLink, &devName);
-	if (!NT_SUCCESS(status)) {
-		debug("Failed to create symbolic link (0x%08X)\n", status);
-		IoDeleteDevice(DeviceObject);
-		return status;
-	}
 
 	debug("End DriverEntry\n");
 	return STATUS_SUCCESS;
 }
 
-void WiimoteUnload(_In_ PDRIVER_OBJECT DriverObject) {
-	debug("Begin WiimoteUnload\n");
+void DriverUnload(PDRIVER_OBJECT DriverObject) 
+{
+	UNREFERENCED_PARAMETER(DriverObject);
 	
-	UNICODE_STRING symLink = RTL_CONSTANT_STRING(L"\\??\\WP81Wiimote");
-	// delete symbolic link
-	IoDeleteSymbolicLink(&symLink);
-
-	// delete device object
-	IoDeleteDevice(DriverObject->DeviceObject);
+	debug("Begin DriverUnload\n");
 	
-	debug("End WiimoteUnload\n");
+	debug("End DriverUnload\n");
 }
 
-_Use_decl_annotations_
-NTSTATUS WiimoteCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	UNREFERENCED_PARAMETER(DeviceObject);
-
-	debug("Begin WiimoteCreateClose\n");
-
-	Irp->IoStatus.Status = STATUS_SUCCESS;
-	Irp->IoStatus.Information = 0;
-	IoCompleteRequest(Irp, IO_NO_INCREMENT);
+NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT pdo)
+{
+	PAGED_CODE();
 	
-	debug("End WiimoteCreateClose\n");
+	debug("Begin AddDevice\n");
 	
-	return STATUS_SUCCESS;
-}
+	NTSTATUS status;
 
-_Use_decl_annotations_
-NTSTATUS WiimoteDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp) {
-	//UNREFERENCED_PARAMETER(DeviceObject);
+	// Create a function device object to represent the hardware we're managing.
+
+	PDEVICE_OBJECT fdo;
+	ULONG dxsize = (sizeof(DEVICE_EXTENSION) + 7) & ~7;
+
 	
-	debug("Begin WiimoteDeviceControl\n");
+	status = IoCreateDevice(DriverObject, dxsize, NULL, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &fdo);
+	if (!NT_SUCCESS(status))
+	{						// can't create device object
+		debug("IoCreateDevice failed - %X\n", status);
+		return status;
+	}						// can't create device object
+
+	PDEVICE_EXTENSION pdx = (PDEVICE_EXTENSION) fdo->DeviceExtension;
 	
-	// get our IO_STACK_LOCATION
-	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
-	NTSTATUS status = STATUS_SUCCESS;
-
-	switch (stack->Parameters.DeviceIoControl.IoControlCode) {
-		case IOCTL_WIIMOTE_TEST:
-		{
-			// do the work
-			debug("Received IOCTL_WIIMOTE_TEST\n");
-			
-			HANDLE *pInputBuffer = (HANDLE*)stack->Parameters.DeviceIoControl.Type3InputBuffer; // METHOD_NEITHER
-			HANDLE radioHandle = *pInputBuffer;
-			debug("radioHandle=0x%08X\n",radioHandle);
-			
-			PVOID NotificationHandle = NULL;
-			NotificationHandle = ExAllocatePool(PagedPool,1024);
-			
-			NTSTATUS status2 = IoRegisterPlugPlayNotification (
-                EventCategoryDeviceInterfaceChange,
-                PNPNOTIFY_DEVICE_INTERFACE_INCLUDE_EXISTING_INTERFACES,
-                (PVOID)&GUID_DEVINTERFACE_HID,
-                DeviceObject->DriverObject,
-                MyCallbackRoutine,
-                DeviceObject,
-                NotificationHandle);
-
-			if (!NT_SUCCESS(status2)) {
-				debug("status2=%d\n", status2);
-			}
-			debug("NotificationHandle=0x%08X\n", NotificationHandle);
-			ExFreePool(NotificationHandle);
-			
-			// PVOID radioObject;
-			// NTSTATUS status2 = ObReferenceObjectByHandle(radioHandle, GENERIC_ALL, NULL, UserMode, &radioObject, NULL);
-			// debug("status2=%d\n",status2);
-			// if (NT_SUCCESS(status2)) 
-			// {
-				// debug("radioObject=0x%08X\n",radioObject);
-				
-				// KEVENT hComplete;
-				// KeInitializeEvent(&hComplete,NotificationEvent,FALSE);
-
-				// BTH_LOCAL_RADIO_INFO radioInfo1;
-				// BTH_LOCAL_RADIO_INFO radioInfo2;
-
-				// IO_STATUS_BLOCK IoStatusBlock;				
-				// PIRP pIrp = IoBuildDeviceIoControlRequest(
-					// IOCTL_BTH_GET_LOCAL_INFO,
-					// radioObject,
-					// &radioInfo1,sizeof(radioInfo1),
-					// &radioInfo2,sizeof(radioInfo2),FALSE,&hComplete,&IoStatusBlock);
-				
-				// NTSTATUS status3 = IoCallDriver(radioObject,pIrp);
-				// debug(hLogFile, "status3=%d\n",status3);
-				// if (status3==STATUS_PENDING)
-					// KeWaitForSingleObject(&hComplete,Suspended,KernelMode,FALSE,NULL);
-				// else
-					// IoStatusBlock.Status=status3;
-				
-				// debug("flags1=0x%08X\n",radioInfo1.flags);
-				// debug("flags2=0x%08X\n",radioInfo2.flags);
-								
-				// ObDereferenceObject(radioObject);
-			// }
+	// From this point forward, any error will have side effects that need to
+	// be cleaned up.
+	do
+	{						// finish initialization
+		pdx->DeviceObject = fdo;
+		pdx->Pdo = pdo;
+	
+		// Link our device object into the stack leading to the PDO		
+		pdx->LowerDeviceObject = IoAttachDeviceToDeviceStack(fdo, pdo);
+		if (!pdx->LowerDeviceObject)
+		{					// can't attach
+			debug("IoAttachDeviceToDeviceStack failed\n");
+			status = STATUS_DEVICE_REMOVED;
 			break;
-		}
+		}					// can't attach
 
-		default:
-			status = STATUS_INVALID_DEVICE_REQUEST;
-			break;
-	}
+		// Set power management flags in the device object
+		fdo->Flags |= DO_POWER_PAGABLE;
 
+		// Clear the "initializing" flag so that we can get IRPs
+		fdo->Flags &= ~DO_DEVICE_INITIALIZING;
+	}						// finish initialization
+	while (FALSE);
+
+	////////////////////
+
+	// PIRP Irp;
+	// Irp = IoAllocateIrp( pdx->LowerDeviceObject->StackSize, FALSE );
+	// Set up the next IRP stack location
+	// PIO_STACK_LOCATION NextIrpStack;
+	// NextIrpStack = IoGetNextIrpStackLocation( Irp );
+	// NextIrpStack->MajorFunction = IRP_MJ_DEVICE_CONTROL;
+	// NextIrpStack->Parameters.DeviceIoControl.IoControlCode = IOCTL_INTERNAL_BTHENUM_GET_ENUMINFO;
+	// Pass the IRP down the driver stack
+	// NTSTATUS Status2;
+	// Status2 = IoCallDriver( pdx->LowerDeviceObject, Irp );
+	// if (!NT_SUCCESS(Status2))
+	// {						
+		// debug("IoCallDriver failed - %X\n", status);
+	// }
+	// else
+	// {
+		// PBTH_ENUMERATOR_INFO pinfo = Irp->AssociatedIrp.SystemBuffer;
+		// debug("DeviceString=%S\n", pinfo->DeviceString);
+	// }
+	
+
+	////////////////////
+	
+	if (!NT_SUCCESS(status))
+	{					// need to cleanup
+		if (pdx->LowerDeviceObject)
+			IoDetachDevice(pdx->LowerDeviceObject);
+
+		IoDeleteDevice(fdo);
+	}					// need to cleanup
+
+	debug("End AddDevice\n");
+	return status;
+} 
+
+NTSTATUS DefaultPnpHandler(PDEVICE_EXTENSION pdx, PIRP Irp)
+{							
+	debug("Begin DefaultPnpHandler\n");
+	IoSkipCurrentIrpStackLocation(Irp);
+	NTSTATUS status = IoCallDriver(pdx->LowerDeviceObject, Irp);
+	debug("End DefaultPnpHandler\n");
+	return status;
+}			
+
+NTSTATUS CompleteRequest(IN PIRP Irp, IN NTSTATUS status)
+{
 	Irp->IoStatus.Status = status;
 	Irp->IoStatus.Information = 0;
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
-	
-	debug("End WiimoteDeviceControl\n");
-	
 	return status;
 }
+		
 
-NTSTATUS MyCallbackRoutine(PVOID NotificationStructure, PVOID Context)
+NTSTATUS HandleStartDevice(PDEVICE_EXTENSION pdx, PIRP Irp)
 {
-	//UNREFERENCED_PARAMETER(NotificationStructure);
-	UNREFERENCED_PARAMETER(Context);
+	debug("Begin HandleStartDevice\n");
 	
-	NTSTATUS status = STATUS_SUCCESS;
-	
-	debug("Begin MyCallbackRoutine\n");
-	
-	DEVICE_INTERFACE_CHANGE_NOTIFICATION* pNotification = NULL;
-    pNotification = (DEVICE_INTERFACE_CHANGE_NOTIFICATION*)NotificationStructure;
-	
-	debug("pNotification->Version = %d\n",pNotification->Version);	
-	
-	GUID eventGuid = pNotification->Event;	
-	GUID interfaceClassGuid = pNotification->InterfaceClassGuid;	
-	
-	UNICODE_STRING evenGuidString;
-	RtlStringFromGUID(&eventGuid, &evenGuidString);
-	debug("pNotification->Event = %wZ",&evenGuidString);
-	RtlFreeUnicodeString(&evenGuidString);
-	if (RtlEqualMemory(&eventGuid, &GUID_DEVICE_INTERFACE_ARRIVAL, sizeof(GUID)))
-    {
-		debug("\tGUID_DEVICE_INTERFACE_ARRIVAL\n");
-	}
-	if (RtlEqualMemory(&eventGuid, &GUID_DEVICE_INTERFACE_REMOVAL, sizeof(GUID)))
-    {
-		debug("\tGUID_DEVICE_INTERFACE_REMOVAL\n");
-	}
+	Irp->IoStatus.Status = STATUS_SUCCESS;	// flag that we handled this IRP
 
-	UNICODE_STRING interfaceClassGuidString;
-	RtlStringFromGUID(&interfaceClassGuid, &interfaceClassGuidString);
-	debug("pNotification->InterfaceClassGuid = %wZ\n",&interfaceClassGuidString);
-	RtlFreeUnicodeString(&interfaceClassGuidString);
+	//NTSTATUS status = ForwardAndWait(pdx, Irp);
+	// if (!NT_SUCCESS(status))
+		// return CompleteRequest(Irp, status);
 
-	debug("pNotification->SymbolicLinkName = %wZ\n", pNotification->SymbolicLinkName);
-	
-	debug("End MyCallbackRoutine\n");
-	
-	return status;
+	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
+
+	PCM_PARTIAL_RESOURCE_LIST raw;
+	if (stack->Parameters.StartDevice.AllocatedResources)
+		raw = &stack->Parameters.StartDevice.AllocatedResources->List[0].PartialResourceList;
+	else
+		raw = NULL;
+
+	PCM_PARTIAL_RESOURCE_LIST translated;
+	if (stack->Parameters.StartDevice.AllocatedResourcesTranslated)
+		translated = &stack->Parameters.StartDevice.AllocatedResourcesTranslated->List[0].PartialResourceList;
+	else
+		translated = NULL;
+
+
+	// Assume we are initially in the D0 state
+
+	pdx->devpower = PowerDeviceD0;
+	pdx->syspower = PowerSystemWorking;
+
+	POWER_STATE foo;
+	foo.DeviceState = PowerDeviceD0;
+	PoSetPowerState(pdx->Pdo, DevicePowerState, foo);
+
+	debug("End HandleStartDevice\n");
+	return CompleteRequest(Irp, STATUS_SUCCESS);
 }
+		
+
+NTSTATUS DispatchPnp(PDEVICE_OBJECT fdo, PIRP Irp)
+{
+	PAGED_CODE();
+	
+	debug("Begin DispatchPnp\n");
+	
+	PDEVICE_EXTENSION pdx = (PDEVICE_EXTENSION) fdo->DeviceExtension;
+
+	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
+	ULONG fcn = stack->MinorFunction;
+	
+	static NTSTATUS (*fcntab[])(PDEVICE_EXTENSION pdx, PIRP Irp) = {
+		HandleStartDevice,		// IRP_MN_START_DEVICE
+		DefaultPnpHandler,		// IRP_MN_QUERY_REMOVE_DEVICE
+		DefaultPnpHandler,		// IRP_MN_REMOVE_DEVICE
+		DefaultPnpHandler,		// IRP_MN_CANCEL_REMOVE_DEVICE
+		DefaultPnpHandler,		// IRP_MN_STOP_DEVICE
+		DefaultPnpHandler,		// IRP_MN_QUERY_STOP_DEVICE
+		DefaultPnpHandler,		// IRP_MN_CANCEL_STOP_DEVICE
+		DefaultPnpHandler,		// IRP_MN_QUERY_DEVICE_RELATIONS
+		DefaultPnpHandler,		// IRP_MN_QUERY_INTERFACE
+		DefaultPnpHandler,		// IRP_MN_QUERY_CAPABILITIES
+		DefaultPnpHandler,		// IRP_MN_QUERY_RESOURCES
+		DefaultPnpHandler,		// IRP_MN_QUERY_RESOURCE_REQUIREMENTS
+		DefaultPnpHandler,		// IRP_MN_QUERY_DEVICE_TEXT
+		DefaultPnpHandler,		// IRP_MN_FILTER_RESOURCE_REQUIREMENTS
+		DefaultPnpHandler,		// 
+		DefaultPnpHandler,		// IRP_MN_READ_CONFIG
+		DefaultPnpHandler,		// IRP_MN_WRITE_CONFIG
+		DefaultPnpHandler,		// IRP_MN_EJECT
+		DefaultPnpHandler,		// IRP_MN_SET_LOCK
+		DefaultPnpHandler,		// IRP_MN_QUERY_ID
+		DefaultPnpHandler,		// IRP_MN_QUERY_PNP_DEVICE_STATE
+		DefaultPnpHandler,		// IRP_MN_QUERY_BUS_INFORMATION
+		DefaultPnpHandler,		// IRP_MN_DEVICE_USAGE_NOTIFICATION
+		DefaultPnpHandler,		// IRP_MN_SURPRISE_REMOVAL
+	};
+	
+	static char* fcnname[] = {
+		"IRP_MN_START_DEVICE",
+		"IRP_MN_QUERY_REMOVE_DEVICE",
+		"IRP_MN_REMOVE_DEVICE",
+		"IRP_MN_CANCEL_REMOVE_DEVICE",
+		"IRP_MN_STOP_DEVICE",
+		"IRP_MN_QUERY_STOP_DEVICE",
+		"IRP_MN_CANCEL_STOP_DEVICE",
+		"IRP_MN_QUERY_DEVICE_RELATIONS",
+		"IRP_MN_QUERY_INTERFACE",
+		"IRP_MN_QUERY_CAPABILITIES",
+		"IRP_MN_QUERY_RESOURCES",
+		"IRP_MN_QUERY_RESOURCE_REQUIREMENTS",
+		"IRP_MN_QUERY_DEVICE_TEXT",
+		"IRP_MN_FILTER_RESOURCE_REQUIREMENTS",
+		"",
+		"IRP_MN_READ_CONFIG",
+		"IRP_MN_WRITE_CONFIG",
+		"IRP_MN_EJECT",
+		"IRP_MN_SET_LOCK",
+		"IRP_MN_QUERY_ID",
+		"IRP_MN_QUERY_PNP_DEVICE_STATE",
+		"IRP_MN_QUERY_BUS_INFORMATION",
+		"IRP_MN_DEVICE_USAGE_NOTIFICATION",
+		"IRP_MN_SURPRISE_REMOVAL",
+	};
+	if (fcn < arraysize(fcnname))
+		debug("PNP Request (%s)\n", fcnname[fcn]);
+	else
+		debug("PNP Request ?? (0x%X)\n", fcn);
+	
+	if (fcn >= arraysize(fcntab))
+	{						// unknown function
+		NTSTATUS status = DefaultPnpHandler(pdx, Irp); // some function we don't know about
+		debug("End DispatchPnp\n");
+		return status;
+	}						// unknown function	
+	
+	NTSTATUS status = (*fcntab[fcn])(pdx, Irp);
+	
+	debug("End DispatchPnp\n");
+	return status;
+} 
+
+NTSTATUS DispatchPower(PDEVICE_OBJECT fdo, PIRP Irp)
+{
+	UNREFERENCED_PARAMETER(fdo);
+	
+	debug("Begin DispatchPower\n");
+	
+	PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
+	ULONG fcn = stack->MinorFunction;
+	
+	static char* fcnname[] = {
+		"IRP_MN_WAIT_WAKE",
+		"IRP_MN_POWER_SEQUENCE",
+		"IRP_MN_SET_POWER",
+		"IRP_MN_QUERY_POWER",
+	};
+	
+	static char* sysstate[] = {
+		"PowerSystemUnspecified",
+		"PowerSystemWorking",
+		"PowerSystemSleeping1",
+		"PowerSystemSleeping2",
+		"PowerSystemSleeping3",
+		"PowerSystemHibernate",
+		"PowerSystemShutdown",
+		"PowerSystemMaximum",
+	};
+	
+	static char* devstate[] = {
+		"PowerDeviceUnspecified",
+		"PowerDeviceD0",
+		"PowerDeviceD1",
+		"PowerDeviceD2",
+		"PowerDeviceD3",
+		"PowerDeviceMaximum",
+	};
+
+	if (fcn == IRP_MN_SET_POWER || fcn == IRP_MN_QUERY_POWER)
+	{						// handle set/query
+
+		if (stack->Parameters.Power.Type == SystemPowerState)
+			debug("POWER Request (%s), S-state = %s\n", fcnname[fcn], sysstate[stack->Parameters.Power.State.SystemState]);
+		else
+			debug("POWER Request (%s), D-state = %s\n", fcnname[fcn], devstate[stack->Parameters.Power.State.DeviceState]);
+
+	}
+	else
+	{
+		if (fcn < arraysize(fcnname))
+			debug("POWER Request (%s)\n", fcnname[fcn]);
+		else
+			debug("POWER Request ?? (0x%X)\n", fcn);
+		
+	}
+
+	
+	debug("End DispatchPower\n");
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS DispatchWmi(PDEVICE_OBJECT fdo, PIRP Irp)
+{
+	PAGED_CODE();
+	UNREFERENCED_PARAMETER(Irp);
+	
+	debug("Begin DispatchWmi\n");
+	
+	PDEVICE_EXTENSION pdx = (PDEVICE_EXTENSION) fdo->DeviceExtension;
+	IoSkipCurrentIrpStackLocation(Irp);
+
+	debug("End DispatchWmi\n");
+	return IoCallDriver(pdx->LowerDeviceObject, Irp);
+}
+
