@@ -1,0 +1,28 @@
+Get .pdb file :
+
+C:\Program Files (x86)\Windows Kits\8.1\Debuggers\x64>Symchk.exe c:\users\frede\Downloads\bthport.SYS  /v
+
+Open .etl with .tmf or .pdb :
+
+C:\Program Files (x86)\Windows Kits\8.1\Tools\x64\traceview.exe
+
+Generate .tmf :
+https://github.com/mattifestation/MSFTTraceMessageFormat
+https://posts.specterops.io/data-source-analysis-and-dynamic-windows-re-using-wpp-and-tracelogging-e465f8b653f7 :
+
+All of the WPP_SF_* functions (where “SF” stands for “staging function”) were generated at compile time by the WPP preprocessor and they offer a convenient contextual clue as to how data is traced based on the data type signature that follows “SF_”. The data type meanings can be found here but I will break down the ones seen above:
+
+q: pointer type (either 32-bit or 64-bit depending on the process architecture)
+P: pointer type (either 32-bit or 64-bit depending on the process architecture)
+D: an unsigned 32-bit integer
+d: a signed 32-bit integer
+I: an unsigned 64-bit integer
+S: a Unicode string
+The data are pushed onto the stack in the order listed in the function name. For example, in the case of the WPP_SF_qqDqq function, the last five arguments pushed onto the stack would be: pointer, pointer, unsigned 32-bit integer, pointer, pointer. Knowledge of the data types as they are pushed onto the stack is helpful but by themselves, it doesn’t offer the full context.
+
+
+C:\Program Files (x86)\Windows Kits\8.1\bin\x64
+tracefmt "c:\users\frede\Downloads\WPB_000_20221127_102329\FieldMedic-Bluetooth.etl" -tmf c:\users\frede\Downloads\bluetooth.tmf -v -o c:\users\frede\Downloads\FmtFile.txt
+tracefmt "c:\users\frede\Downloads\WPB_000_20221127_102329\FieldMedic-Bluetooth.etl" -v -o c:\users\frede\Downloads\FmtFile.txt
+
+3c 98 1c 6d

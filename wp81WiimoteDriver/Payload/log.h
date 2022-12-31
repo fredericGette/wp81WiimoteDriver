@@ -11,4 +11,7 @@
 #include <bthguid.h>
 #include <bthddi.h>
 
-void EvtCleanupCallback(WDFOBJECT DriverObject);
+
+
+HANDLE openLogFile();
+void debug(char *format, ...);
