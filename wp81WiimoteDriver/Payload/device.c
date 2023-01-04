@@ -280,7 +280,7 @@ NTSTATUS RetrieveLocalInfo(PWIIMOTE_DEVICE_CONTEXT_HEADER DevCtxHdr)
     }
 
     DevCtxHdr->LocalBthAddr = brb->BtAddress;
-	debug("LocalBthAddr=%I64u\n", brb->BtAddress);
+	debug("LocalBthAddr=%012I64X\n", brb->BtAddress);
 /*
     //
     // Now retreive local host supported features
