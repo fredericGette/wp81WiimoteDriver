@@ -231,6 +231,52 @@ exit:
 	return Status;
 }
 
+NTSTATUS CreateBuffer( WDFREQUEST Request, SIZE_T BufferSize, WDFMEMORY * Memory, PVOID * Buffer)
+{
+	NTSTATUS Status = STATUS_SUCCESS;
+    WDF_OBJECT_ATTRIBUTES Attributes;
+	
+	debug("Begin CreateBuffer\n");
+
+	WDF_OBJECT_ATTRIBUTES_INIT(&Attributes);
+	Attributes.ParentObject = Request;
+	
+	Status = WdfMemoryCreate(&Attributes, NonPagedPool, POOLTAG_WIIMOTE, BufferSize, Memory, Buffer);
+	if(!NT_SUCCESS(Status))
+	{
+		goto exit;
+	}
+
+exit:
+	debug("End CreateBuffer\n");
+	return Status;
+}
+
+NTSTATUS BluetoothCreateRequestAndBuffer(WDFDEVICE Device, WDFIOTARGET IoTarget, SIZE_T BufferSize, WDFREQUEST * Request, WDFMEMORY * Memory, PVOID * Buffer)
+{
+	NTSTATUS Status = STATUS_SUCCESS;
+	
+	debug("Begin BluetoothCreateRequestAndBuffer\n");
+
+	Status = CreateRequest(Device, IoTarget, Request);
+	if(!NT_SUCCESS(Status))
+	{
+		goto exit;
+	}
+
+	Status = CreateBuffer((*Request), BufferSize, Memory, Buffer);
+	if(!NT_SUCCESS(Status))
+	{
+		WdfObjectDelete(*Request);
+		(*Request) = NULL;
+		goto exit;
+	}
+	
+exit:	
+	debug("End BluetoothCreateRequestAndBuffer\n");
+	return Status;
+}
+
 NTSTATUS SendBRB(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptRequest, PBRB BRB, PFN_WDF_REQUEST_COMPLETION_ROUTINE	CompletionRoutine)
 {
 	NTSTATUS Status = STATUS_SUCCESS;
@@ -280,7 +326,146 @@ exit:
 	return Status;
 }
 
-VOID L2CAPCallback( PVOID Context, INDICATION_CODE Indication, PINDICATION_PARAMETERS Parameters)
+NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptRequest, PBRB BRB)
+{
+	NTSTATUS Status = STATUS_SUCCESS;
+	WDF_REQUEST_SEND_OPTIONS SendOptions;
+	WDFREQUEST Request;
+
+	debug("Begin SendBRBSynchronous\n");
+
+	if(OptRequest == NULL)
+	{
+		Status = CreateRequest(DeviceContext->Header.Device, DeviceContext->Header.IoTarget, &Request);
+		if(!NT_SUCCESS(Status))
+		{
+			goto exit;
+		}
+	}
+	else
+	{
+		Request = OptRequest;
+	}
+
+	Status = PrepareRequest(DeviceContext->Header.IoTarget, BRB, Request);
+	if(!NT_SUCCESS(Status))
+	{
+		WdfObjectDelete(Request);
+		goto exit;
+	}
+
+	Status = WdfRequestAllocateTimer(Request);
+	if(!NT_SUCCESS(Status))
+	{
+		WdfObjectDelete(Request);
+		goto exit;
+	}
+
+	WDF_REQUEST_SEND_OPTIONS_INIT(&SendOptions, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS | WDF_REQUEST_SEND_OPTION_TIMEOUT);
+	WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&SendOptions, SYNCHRONOUS_CALL_TIMEOUT);
+
+	WdfRequestSend(
+		Request,
+		DeviceContext->Header.IoTarget,
+		&SendOptions
+		);
+	
+	Status = WdfRequestGetStatus(Request);
+
+	if(!NT_SUCCESS(Status))
+	{
+		WdfObjectDelete(Request);
+		goto exit;
+	}
+
+exit:
+	debug("End SendBRBSynchronous\n");
+	return Status;
+}
+
+VOID CleanUpCompletedRequest( WDFREQUEST Request,  WDFIOTARGET IoTarget,  WDFCONTEXT Context)
+{
+	PWIIMOTE_CONTEXT DeviceContext;
+	PWIIMOTE_DEVICE_CONTEXT_HEADER BluetoothContext;
+	PBRB UsedBRB;
+
+	debug("Begin CleanUpCompletedRequest\n");
+
+	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
+	BluetoothContext = &(DeviceContext->Header);
+	UsedBRB = (PBRB)Context;
+
+	WdfObjectDelete(Request);
+	BluetoothContext->ProfileDrvInterface.BthFreeBrb(UsedBRB);
+	
+	debug("End CleanUpCompletedRequest\n");
+}
+
+VOID TransferToDeviceCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget,PWDF_REQUEST_COMPLETION_PARAMS Params, WDFCONTEXT Context)
+{
+	UNREFERENCED_PARAMETER(Params);
+	debug("Begin TransferToDeviceCompletion\n");
+
+	CleanUpCompletedRequest(Request, IoTarget, Context);
+	debug("End TransferToDeviceCompletion\n");
+}
+
+NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Request, WDFMEMORY Memory, BOOLEAN Synchronous)
+{
+	NTSTATUS Status = STATUS_SUCCESS;
+	PWIIMOTE_DEVICE_CONTEXT_HEADER BluetoothContext = &(DeviceContext->Header);
+	PBRB_L2CA_ACL_TRANSFER BRBTransfer;
+	size_t BufferSize;
+	
+	debug("Begin BluetoothTransferToDevice\n");
+	
+	if(BluetoothContext->InterruptChannelHandle == NULL)
+	{
+		Status = STATUS_INVALID_HANDLE;
+		goto exit;
+	}
+
+	// Now get an BRB and fill it
+	BRBTransfer = (PBRB_L2CA_ACL_TRANSFER)BluetoothContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, POOLTAG_WIIMOTE);
+	if (BRBTransfer == NULL)
+	{
+		Status = STATUS_INSUFFICIENT_RESOURCES;
+		goto exit;
+	}
+
+	BRBTransfer->BtAddress = 247284104376928;
+	BRBTransfer->ChannelHandle = BluetoothContext->InterruptChannelHandle;
+	BRBTransfer->TransferFlags = ACL_TRANSFER_DIRECTION_OUT;
+	BRBTransfer->BufferMDL = NULL;
+	BRBTransfer->Buffer = WdfMemoryGetBuffer(Memory, &BufferSize);
+	BRBTransfer->BufferSize = (ULONG)BufferSize;
+
+	//Send
+	if(Synchronous)
+	{
+		Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRBTransfer);
+		BluetoothContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBTransfer);
+		if(!NT_SUCCESS(Status))
+		{
+			goto exit;
+		}
+	}
+	else
+	{
+		Status = SendBRB(DeviceContext, Request, (PBRB)BRBTransfer, TransferToDeviceCompletion);	
+		if(!NT_SUCCESS(Status))
+		{
+			BluetoothContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBTransfer);
+			goto exit;
+		}
+	}
+
+exit:
+	debug("End BluetoothTransferToDevice\n");
+	return Status;
+}
+
+VOID L2CAPCallback(PVOID Context, INDICATION_CODE Indication, PINDICATION_PARAMETERS Parameters)
 {
 	debug("Begin L2CAPCallback\n");
 	
@@ -380,22 +565,37 @@ exit:
 	return Status;
 }
 
-VOID CleanUpCompletedRequest( WDFREQUEST Request,  WDFIOTARGET IoTarget,  WDFCONTEXT Context)
+NTSTATUS SetLEDs(PWIIMOTE_CONTEXT DeviceContext, BYTE LEDFlag)
 {
-	PWIIMOTE_CONTEXT DeviceContext;
-	PWIIMOTE_DEVICE_CONTEXT_HEADER BluetoothContext;
-	PBRB UsedBRB;
+	CONST size_t BufferSize = 3;
+	NTSTATUS Status = STATUS_SUCCESS;
+	WDFREQUEST Request;
+	WDFMEMORY Memory;
+	BYTE * Data;
 
-	debug("Begin CleanUpCompletedRequest\n");
-
-	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
-	BluetoothContext = &(DeviceContext->Header);
-	UsedBRB = (PBRB)Context;
-
-	WdfObjectDelete(Request);
-	BluetoothContext->ProfileDrvInterface.BthFreeBrb(UsedBRB);
+	debug("Begin SetLEDs\n");
 	
-	debug("End CleanUpCompletedRequest\n");
+	// Get Resources
+	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Header.Device, DeviceContext->Header.IoTarget, BufferSize, &Request, &Memory, (PVOID *)&Data); 
+	if(!NT_SUCCESS(Status))
+	{
+		goto exit;
+	}
+
+	// Fill Buffer	
+	Data[0] = 0xA2;	//HID Output Report
+	Data[1] = 0x11;	//Player LED
+	Data[2] = LEDFlag;
+
+	Status = BluetoothTransferToDevice(DeviceContext, Request, Memory, FALSE);
+	if(!NT_SUCCESS(Status))
+	{
+		goto exit;
+	}
+
+exit:
+	debug("End SetLEDs\n");
+	return Status;
 }
 
 VOID InterruptChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQUEST_COMPLETION_PARAMS Params, WDFCONTEXT Context)
@@ -435,6 +635,7 @@ VOID InterruptChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_R
 	
 	// Start Wiimote functionality
 	debug("WiimoteStart\n");
+	SetLEDs(DeviceContext, WIIMOTE_LEDS_ONE);
 	
 	debug("End InterruptChannelCompletion\n");
 }
