@@ -1,52 +1,4 @@
 #include "device.h"
-#include "log.h"
-
-NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
-{
-	NTSTATUS                        status;
-    WDFDEVICE                       device;    
-    WDF_OBJECT_ATTRIBUTES           deviceAttributes;
-    WDF_PNPPOWER_EVENT_CALLBACKS    pnpPowerCallbacks;
-    
-    UNREFERENCED_PARAMETER(Driver);
-	
-	debug("Begin EvtDriverDeviceAdd\n");
-
-	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPowerCallbacks);
-    pnpPowerCallbacks.EvtDevicePrepareHardware = EvtDevicePrepareHardware;
-    pnpPowerCallbacks.EvtDeviceD0Entry = EvtDeviceD0Entry;
-    pnpPowerCallbacks.EvtDeviceD0Exit = EvtDeviceD0Exit;
-	pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = EvtDeviceSelfManagedIoInit;
-    WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);
-
-    //
-    // Set device attributes
-    //
-    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, WIIMOTE_CONTEXT);
- 
-    status = WdfDeviceCreate(
-        &DeviceInit,
-        &deviceAttributes,
-        &device
-        );
-
-    if (!NT_SUCCESS(status))
-    {
-        debug("WdfDeviceCreate failed with Status code %d\n", status);
-
-        goto exit;
-    }
-
-exit:    
-    //
-    // We don't need to worry about deleting any objects on failure
-    // because all the object created so far are parented to device and when
-    // we return an error, framework will delete the device and as a 
-    // result all the child objects will get deleted along with that.
-    //
-	debug("End EvtDriverDeviceAdd\n");
-    return status;
-}
 
 NTSTATUS EvtDevicePrepareHardware(WDFDEVICE Device, WDFCMRESLIST ResourceList, WDFCMRESLIST ResourceListTranslated)
 {
@@ -74,94 +26,6 @@ NTSTATUS EvtDeviceD0Exit(WDFDEVICE Device, WDF_POWER_DEVICE_STATE TargetState)
 	debug("Begin EvtDeviceD0Exit\n");
 	debug("End EvtDeviceD0Exit\n");
 	return STATUS_SUCCESS;
-}
-
-// formats a request with brb and sends it synchronously
-NTSTATUS SendBrbSynchronously(WDFIOTARGET IoTarget, WDFREQUEST Request, PBRB Brb, ULONG BrbSize)
-{
-    NTSTATUS status;
-    WDF_REQUEST_REUSE_PARAMS reuseParams;
-    WDF_MEMORY_DESCRIPTOR OtherArg1Desc;
-
-	debug("Begin SendBrbSynchronously\n");
-
-    WDF_REQUEST_REUSE_PARAMS_INIT(
-        &reuseParams,
-        WDF_REQUEST_REUSE_NO_FLAGS, 
-        STATUS_NOT_SUPPORTED
-        );
-	debug("reuseParams=0x%08X\n", reuseParams);
-
-    status = WdfRequestReuse(Request, &reuseParams);
-    if (!NT_SUCCESS(status))
-    {
-		debug("WdfRequestReuse failed, returning status code %d\n", status);        
-        goto exit;
-    }
-
-    WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
-                        &OtherArg1Desc,
-                        Brb,
-                        BrbSize
-                        );
-    
-    status = WdfIoTargetSendInternalIoctlOthersSynchronously(
-        IoTarget,
-        Request,
-        IOCTL_INTERNAL_BTH_SUBMIT_BRB,
-        &OtherArg1Desc,
-        NULL, //OtherArg2
-        NULL, //OtherArg4
-        NULL, //RequestOptions
-        NULL  //BytesReturned
-        );
-
-exit:
-	debug("End SendBrbSynchronously\n");
-    return status;
-}
-
-// Retrieves the local bth address.
-NTSTATUS RetrieveLocalInfo(PWIIMOTE_DEVICE_CONTEXT_HEADER DevCtxHdr)
-{
-    NTSTATUS status = STATUS_SUCCESS;
-    struct _BRB_GET_LOCAL_BD_ADDR * brb = NULL;
-	
-	debug("Begin RetrieveLocalInfo\n");
-    
-    brb = (struct _BRB_GET_LOCAL_BD_ADDR *)DevCtxHdr->ProfileDrvInterface.BthAllocateBrb(BRB_HCI_GET_LOCAL_BD_ADDR, POOLTAG_WIIMOTE);
-
-    if(brb == NULL)
-    {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-
-        debug("Failed to allocate brb BRB_HCI_GET_LOCAL_BD_ADDR, returning status code %d\n", status);        
-
-        goto exit;
-    }
-
-    status = SendBrbSynchronously(
-        DevCtxHdr->IoTarget,
-        DevCtxHdr->Request,
-        (PBRB) brb,
-        sizeof(*brb)
-        );
-
-    if (!NT_SUCCESS(status))
-    {
-        debug("Retrieving local bth address failed, Status code %d\n", status);        
-
-        goto exit1;        
-    }
-
-    DevCtxHdr->LocalBthAddr = brb->BtAddress;
-	debug("LocalBthAddr=%012I64X\n", brb->BtAddress);
-
-exit1:
-    DevCtxHdr->ProfileDrvInterface.BthFreeBrb((PBRB)brb);
-exit:
-	debug("End RetrieveLocalInfo\n");
-    return status;
 }
 
 NTSTATUS CreateRequest(WDFDEVICE Device, WDFIOTARGET IoTarget, WDFREQUEST * Request)
@@ -277,7 +141,7 @@ exit:
 	return Status;
 }
 
-NTSTATUS SendBRB(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptRequest, PBRB BRB, PFN_WDF_REQUEST_COMPLETION_ROUTINE	CompletionRoutine)
+NTSTATUS SendBRB(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptRequest, PBRB BRB, PFN_WDF_REQUEST_COMPLETION_ROUTINE CompletionRoutine)
 {
 	NTSTATUS Status = STATUS_SUCCESS;
 	WDFREQUEST Request;
@@ -286,7 +150,7 @@ NTSTATUS SendBRB(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptRequest, PBRB BRB
 
 	if(OptRequest == NULL)
 	{
-		Status = CreateRequest(DeviceContext->Header.Device, DeviceContext->Header.IoTarget, &Request);
+		Status = CreateRequest(DeviceContext->Device, DeviceContext->IoTarget, &Request);
 		if(!NT_SUCCESS(Status))
 		{
 			goto exit;
@@ -297,7 +161,7 @@ NTSTATUS SendBRB(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptRequest, PBRB BRB
 		Request = OptRequest;
 	}
 
-	Status = PrepareRequest(DeviceContext->Header.IoTarget, BRB, Request);
+	Status = PrepareRequest(DeviceContext->IoTarget, BRB, Request);
 	if(!NT_SUCCESS(Status))
 	{
 		WdfObjectDelete(Request);
@@ -312,7 +176,7 @@ NTSTATUS SendBRB(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptRequest, PBRB BRB
 
 	if(!WdfRequestSend(
 		Request,
-		DeviceContext->Header.IoTarget,
+		DeviceContext->IoTarget,
 		WDF_NO_SEND_OPTIONS
 		))
 	{
@@ -336,7 +200,7 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 
 	if(OptRequest == NULL)
 	{
-		Status = CreateRequest(DeviceContext->Header.Device, DeviceContext->Header.IoTarget, &Request);
+		Status = CreateRequest(DeviceContext->Device, DeviceContext->IoTarget, &Request);
 		if(!NT_SUCCESS(Status))
 		{
 			goto exit;
@@ -347,7 +211,7 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 		Request = OptRequest;
 	}
 
-	Status = PrepareRequest(DeviceContext->Header.IoTarget, BRB, Request);
+	Status = PrepareRequest(DeviceContext->IoTarget, BRB, Request);
 	if(!NT_SUCCESS(Status))
 	{
 		WdfObjectDelete(Request);
@@ -366,7 +230,7 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 
 	WdfRequestSend(
 		Request,
-		DeviceContext->Header.IoTarget,
+		DeviceContext->IoTarget,
 		&SendOptions
 		);
 	
@@ -386,17 +250,15 @@ exit:
 VOID CleanUpCompletedRequest( WDFREQUEST Request,  WDFIOTARGET IoTarget,  WDFCONTEXT Context)
 {
 	PWIIMOTE_CONTEXT DeviceContext;
-	PWIIMOTE_DEVICE_CONTEXT_HEADER BluetoothContext;
 	PBRB UsedBRB;
 
 	debug("Begin CleanUpCompletedRequest\n");
 
 	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
-	BluetoothContext = &(DeviceContext->Header);
 	UsedBRB = (PBRB)Context;
 
 	WdfObjectDelete(Request);
-	BluetoothContext->ProfileDrvInterface.BthFreeBrb(UsedBRB);
+	DeviceContext->ProfileDrvInterface.BthFreeBrb(UsedBRB);
 	
 	debug("End CleanUpCompletedRequest\n");
 }
@@ -413,20 +275,19 @@ VOID TransferToDeviceCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget,PWDF_RE
 NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Request, WDFMEMORY Memory, BOOLEAN Synchronous)
 {
 	NTSTATUS Status = STATUS_SUCCESS;
-	PWIIMOTE_DEVICE_CONTEXT_HEADER BluetoothContext = &(DeviceContext->Header);
 	PBRB_L2CA_ACL_TRANSFER BRBTransfer;
 	size_t BufferSize;
 	
 	debug("Begin BluetoothTransferToDevice\n");
 	
-	if(BluetoothContext->InterruptChannelHandle == NULL)
+	if(DeviceContext->InterruptChannelHandle == NULL)
 	{
 		Status = STATUS_INVALID_HANDLE;
 		goto exit;
 	}
 
 	// Now get an BRB and fill it
-	BRBTransfer = (PBRB_L2CA_ACL_TRANSFER)BluetoothContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, POOLTAG_WIIMOTE);
+	BRBTransfer = (PBRB_L2CA_ACL_TRANSFER)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, POOLTAG_WIIMOTE);
 	if (BRBTransfer == NULL)
 	{
 		Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -434,7 +295,7 @@ NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Re
 	}
 
 	BRBTransfer->BtAddress = 247284104376928;
-	BRBTransfer->ChannelHandle = BluetoothContext->InterruptChannelHandle;
+	BRBTransfer->ChannelHandle = DeviceContext->InterruptChannelHandle;
 	BRBTransfer->TransferFlags = ACL_TRANSFER_DIRECTION_OUT;
 	BRBTransfer->BufferMDL = NULL;
 	BRBTransfer->Buffer = WdfMemoryGetBuffer(Memory, &BufferSize);
@@ -444,7 +305,7 @@ NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Re
 	if(Synchronous)
 	{
 		Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRBTransfer);
-		BluetoothContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBTransfer);
+		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBTransfer);
 		if(!NT_SUCCESS(Status))
 		{
 			goto exit;
@@ -455,7 +316,7 @@ NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Re
 		Status = SendBRB(DeviceContext, Request, (PBRB)BRBTransfer, TransferToDeviceCompletion);	
 		if(!NT_SUCCESS(Status))
 		{
-			BluetoothContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBTransfer);
+			DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBTransfer);
 			goto exit;
 		}
 	}
@@ -506,7 +367,6 @@ VOID L2CAPCallback(PVOID Context, INDICATION_CODE Indication, PINDICATION_PARAME
 NTSTATUS OpenChannel(PWIIMOTE_CONTEXT DeviceContext, PBRB PreAllocatedBRB, BYTE PSM, PFNBTHPORT_INDICATION_CALLBACK ChannelCallback,PFN_WDF_REQUEST_COMPLETION_ROUTINE ChannelCompletion)
 {
 	NTSTATUS Status = STATUS_SUCCESS;
-	PWIIMOTE_DEVICE_CONTEXT_HEADER BluetoothContext = &(DeviceContext->Header);
 	PBRB_L2CA_OPEN_CHANNEL BRBOpenChannel;
 
 	debug("Begin OpenChannel\n");
@@ -514,7 +374,7 @@ NTSTATUS OpenChannel(PWIIMOTE_CONTEXT DeviceContext, PBRB PreAllocatedBRB, BYTE 
 	//Create or reuse BRB
 	if(PreAllocatedBRB == NULL)
 	{
-		BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)BluetoothContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, POOLTAG_WIIMOTE);
+		BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, POOLTAG_WIIMOTE);
 		if (BRBOpenChannel == NULL)
 		{
 			Status = STATUS_INSUFFICIENT_RESOURCES;
@@ -523,7 +383,7 @@ NTSTATUS OpenChannel(PWIIMOTE_CONTEXT DeviceContext, PBRB PreAllocatedBRB, BYTE 
 	}
 	else
 	{
-		BluetoothContext->ProfileDrvInterface.BthReuseBrb(PreAllocatedBRB, BRB_L2CA_OPEN_CHANNEL);
+		DeviceContext->ProfileDrvInterface.BthReuseBrb(PreAllocatedBRB, BRB_L2CA_OPEN_CHANNEL);
 		BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)PreAllocatedBRB;
 	}
 	
@@ -543,7 +403,7 @@ NTSTATUS OpenChannel(PWIIMOTE_CONTEXT DeviceContext, PBRB PreAllocatedBRB, BYTE 
 	BRBOpenChannel->ConfigOut.LinkTO = 0;
 
     BRBOpenChannel->IncomingQueueDepth = 50;
-    BRBOpenChannel->ReferenceObject = (PVOID) WdfDeviceWdmGetDeviceObject(DeviceContext->Header.Device);
+    BRBOpenChannel->ReferenceObject = (PVOID) WdfDeviceWdmGetDeviceObject(DeviceContext->Device);
    
 	if(ChannelCallback != NULL)
 	{
@@ -556,7 +416,7 @@ NTSTATUS OpenChannel(PWIIMOTE_CONTEXT DeviceContext, PBRB PreAllocatedBRB, BYTE 
 	Status = SendBRB(DeviceContext, NULL, (PBRB)BRBOpenChannel, ChannelCompletion);
 	if(!NT_SUCCESS(Status))
 	{
-		BluetoothContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBOpenChannel);
+		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBOpenChannel);
 		goto exit;
 	}
 
@@ -576,7 +436,7 @@ NTSTATUS SetLEDs(PWIIMOTE_CONTEXT DeviceContext, BYTE LEDFlag)
 	debug("Begin SetLEDs\n");
 	
 	// Get Resources
-	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Header.Device, DeviceContext->Header.IoTarget, BufferSize, &Request, &Memory, (PVOID *)&Data); 
+	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Device, DeviceContext->IoTarget, BufferSize, &Request, &Memory, (PVOID *)&Data); 
 	if(!NT_SUCCESS(Status))
 	{
 		goto exit;
@@ -602,13 +462,11 @@ VOID InterruptChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_R
 {
 	NTSTATUS Status = STATUS_SUCCESS;
 	PWIIMOTE_CONTEXT DeviceContext;
-	PWIIMOTE_DEVICE_CONTEXT_HEADER BluetoothContext;
 	PBRB_L2CA_OPEN_CHANNEL UsedBRBOpenChannel;
 
 	debug("Begin InterruptChannelCompletion\n");
 
 	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
-	BluetoothContext = &(DeviceContext->Header);
 	UsedBRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)Context;
 
 	Status = Params->IoStatus.Status;
@@ -624,13 +482,13 @@ VOID InterruptChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_R
 		}
 		else 
 		{
-			WdfDeviceSetFailed(DeviceContext->Header.Device, WdfDeviceFailedNoRestart);
+			WdfDeviceSetFailed(DeviceContext->Device, WdfDeviceFailedNoRestart);
 		}
 
 		return;
 	}
 
-	BluetoothContext->InterruptChannelHandle = UsedBRBOpenChannel->ChannelHandle;
+	DeviceContext->InterruptChannelHandle = UsedBRBOpenChannel->ChannelHandle;
 	CleanUpCompletedRequest(Request, IoTarget, Context);
 	
 	// Start Wiimote functionality
@@ -644,18 +502,16 @@ VOID ControlChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQ
 {
 	NTSTATUS Status = STATUS_SUCCESS;
 	PWIIMOTE_CONTEXT DeviceContext;
-	PWIIMOTE_DEVICE_CONTEXT_HEADER BluetoothContext;
 	PBRB_L2CA_OPEN_CHANNEL UsedBRBOpenChannel;
 
 	debug("Begin ControlChannelCompletion\n");
 
 	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
-	BluetoothContext = &(DeviceContext->Header);
 	UsedBRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)Context;
 
 	Status = Params->IoStatus.Status;
 	
-	debug("Control Channel Result %08X\n", Status);
+	debug("Control Channel Result %08X (C00000B5 = timeout)\n", Status);
 
 	if(!NT_SUCCESS(Status))
 	{
@@ -666,13 +522,13 @@ VOID ControlChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQ
 		}
 		else 
 		{
-			WdfDeviceSetFailed(DeviceContext->Header.Device, WdfDeviceFailedNoRestart);
+			WdfDeviceSetFailed(DeviceContext->Device, WdfDeviceFailedNoRestart);
 		}
 
 		return;
 	}
 
-	BluetoothContext->ControlChannelHandle = UsedBRBOpenChannel->ChannelHandle;
+	DeviceContext->ControlChannelHandle = UsedBRBOpenChannel->ChannelHandle;
 	CleanUpCompletedRequest(Request, IoTarget, Context);
 	
 	// Open Interrupt Channel
@@ -698,40 +554,25 @@ NTSTATUS BluetoothOpenChannels(PWIIMOTE_CONTEXT DeviceContext)
 NTSTATUS EvtDeviceSelfManagedIoInit(WDFDEVICE  Device)
 {
 	NTSTATUS status;
-	WDF_OBJECT_ATTRIBUTES attributes;
 	
 	debug("Begin EvtDeviceSelfManagedIoInit\n");
 
     PWIIMOTE_CONTEXT devCtx = GetDeviceContext(Device);
 	debug("devCtx=0x%08X\n",devCtx);
-	debug("devCtx->Header=0x%08X\n",&(devCtx->Header));
-	debug("&devCtx->Header.Device=0x%08X\n",&(devCtx->Header.Device));
-	debug("devCtx->Header.Device=0x%08X\n",devCtx->Header.Device);
-	debug("devCtx->Header.IoTarget=0x%08X\n",devCtx->Header.IoTarget);
-	debug("&devCtx->Header.Request=0x%08X\n",&(devCtx->Header.Request));
-	debug("devCtx->Header.ProfileDrvInterface=0x%08X\n",&(devCtx->Header.ProfileDrvInterface));
-	debug("devCtx->Header.ProfileDrvInterface.BthAllocateBrb=0x%08X\n",devCtx->Header.ProfileDrvInterface.BthAllocateBrb);
+	debug("&devCtx->Device=0x%08X\n",&(devCtx->Device));
+	debug("devCtx->Device=0x%08X\n",devCtx->Device);
+	debug("devCtx->IoTarget=0x%08X\n",devCtx->IoTarget);
+	debug("devCtx->ProfileDrvInterface=0x%08X\n",&(devCtx->ProfileDrvInterface));
+	debug("devCtx->ProfileDrvInterface.BthAllocateBrb=0x%08X\n",devCtx->ProfileDrvInterface.BthAllocateBrb);
 	
-	devCtx->Header.Device = Device;
-	devCtx->Header.IoTarget = WdfDeviceGetIoTarget(Device);
-	
-	WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-	attributes.ParentObject = Device;
-	status = WdfRequestCreate(
-		&attributes,
-		devCtx->Header.IoTarget,
-		&(devCtx->Header.Request)
-	);
-	if (!NT_SUCCESS(status))
-	{
-		debug("WdfRequestCreate failed, Status code %d\n", status);        
-	}
+	devCtx->Device = Device;
+	devCtx->IoTarget = WdfDeviceGetIoTarget(Device);
 	
 	status = WdfFdoQueryForInterface(
-		devCtx->Header.Device,
+		devCtx->Device,
 		&GUID_BTHDDI_PROFILE_DRIVER_INTERFACE,
-		(PINTERFACE)(&devCtx->Header.ProfileDrvInterface),
-		sizeof(devCtx->Header.ProfileDrvInterface),
+		(PINTERFACE)(&devCtx->ProfileDrvInterface),
+		sizeof(devCtx->ProfileDrvInterface),
 		BTHDDI_PROFILE_DRIVER_INTERFACE_VERSION_FOR_QI,
 		NULL
 	);
@@ -741,19 +582,12 @@ NTSTATUS EvtDeviceSelfManagedIoInit(WDFDEVICE  Device)
         debug("WdfFdoQueryForInterface failed, Status code %d\n", status);        
     }
 
-	debug("devCtx->Header=0x%08X\n",&(devCtx->Header));
-	debug("&devCtx->Header.Device=0x%08X\n",&(devCtx->Header.Device));
-	debug("devCtx->Header.Device=0x%08X\n",devCtx->Header.Device);
+	debug("&devCtx->Device=0x%08X\n",&(devCtx->Device));
+	debug("devCtx->Device=0x%08X\n",devCtx->Device);
 	debug("Device=0x%08X\n",Device);
-	debug("devCtx->Header.IoTarget=0x%08X\n",devCtx->Header.IoTarget);
-	debug("devCtx->Header.ProfileDrvInterface=0x%08X\n",&(devCtx->Header.ProfileDrvInterface.BthAllocateBrb));
-	debug("devCtx->Header.ProfileDrvInterface.BthAllocateBrb=0x%08X\n",devCtx->Header.ProfileDrvInterface.BthAllocateBrb);
-
-    status = RetrieveLocalInfo(&devCtx->Header);
-    if (!NT_SUCCESS(status))
-    {
-        goto exit;
-    }
+	debug("devCtx->IoTarget=0x%08X\n",devCtx->IoTarget);
+	debug("devCtx->ProfileDrvInterface=0x%08X\n",&(devCtx->ProfileDrvInterface.BthAllocateBrb));
+	debug("devCtx->ProfileDrvInterface.BthAllocateBrb=0x%08X\n",devCtx->ProfileDrvInterface.BthAllocateBrb);
 	
 	status = BluetoothOpenChannels(devCtx);
 	if(!NT_SUCCESS(status))
@@ -767,3 +601,49 @@ exit:
     return status;
 }
 
+NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
+{
+	NTSTATUS                        status;
+    WDFDEVICE                       device;    
+    WDF_OBJECT_ATTRIBUTES           deviceAttributes;
+    WDF_PNPPOWER_EVENT_CALLBACKS    pnpPowerCallbacks;
+    
+    UNREFERENCED_PARAMETER(Driver);
+	
+	debug("Begin EvtDriverDeviceAdd\n");
+
+	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPowerCallbacks);
+    pnpPowerCallbacks.EvtDevicePrepareHardware = EvtDevicePrepareHardware;
+    pnpPowerCallbacks.EvtDeviceD0Entry = EvtDeviceD0Entry;
+    pnpPowerCallbacks.EvtDeviceD0Exit = EvtDeviceD0Exit;
+	pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = EvtDeviceSelfManagedIoInit;
+    WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);
+
+    //
+    // Set device attributes
+    //
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, WIIMOTE_CONTEXT);
+ 
+    status = WdfDeviceCreate(
+        &DeviceInit,
+        &deviceAttributes,
+        &device
+        );
+
+    if (!NT_SUCCESS(status))
+    {
+        debug("WdfDeviceCreate failed with Status code %d\n", status);
+
+        goto exit;
+    }
+
+exit:    
+    //
+    // We don't need to worry about deleting any objects on failure
+    // because all the object created so far are parented to device and when
+    // we return an error, framework will delete the device and as a 
+    // result all the child objects will get deleted along with that.
+    //
+	debug("End EvtDriverDeviceAdd\n");
+    return status;
+}

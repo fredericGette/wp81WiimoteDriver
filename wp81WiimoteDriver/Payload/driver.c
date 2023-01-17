@@ -72,10 +72,18 @@
 // Local  address: 78:92:3E:C7:7B:53 (132569513818963)
 // Device address: E0:E7:51:33:32:60 (247284104376928)
 
-#include "driver.h"
-#include "device.h"
+#include <ntifs.h>
+#include <wdf.h>
 #include "log.h"
+#include "device.h"
 
+void EvtCleanupCallback(WDFOBJECT DriverObject) 
+{
+    UNREFERENCED_PARAMETER(DriverObject);
+	
+	debug("Begin EvtCleanupCallback\n");
+	debug("End EvtCleanupCallback\n");
+}
 
 // DriverEntry
 NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath)
@@ -107,11 +115,4 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
     return status;
 }
 
-void EvtCleanupCallback(WDFOBJECT DriverObject) 
-{
-    UNREFERENCED_PARAMETER(DriverObject);
-	
-	debug("Begin EvtCleanupCallback\n");
-	debug("End EvtCleanupCallback\n");
-}
 
