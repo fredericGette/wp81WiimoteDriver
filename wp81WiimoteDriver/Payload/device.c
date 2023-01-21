@@ -601,15 +601,34 @@ exit:
     return status;
 }
 
+void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferLength, size_t InputBufferLength, ULONG IoControlCode)
+{
+	UNREFERENCED_PARAMETER(Queue);
+	UNREFERENCED_PARAMETER(OutputBufferLength);
+	UNREFERENCED_PARAMETER(InputBufferLength);
+	
+	debug("Begin EvtIoDeviceControl\n");
+	
+	// 0x000b01a8 	IOCTL_HID_GET_COLLECTION_INFORMATION
+	debug("IOCTL_WIIMOTE_TEST=%08X\n",IOCTL_WIIMOTE_TEST);
+	debug("IoControlCode=%08X\n",IoControlCode);
+	WdfRequestComplete(Request, STATUS_NOT_SUPPORTED);
+	
+	debug("End EvtIoDeviceControl\n");
+}
+
 NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
 {
+    UNREFERENCED_PARAMETER(Driver);
 	NTSTATUS                        status;
     WDFDEVICE                       device;    
     WDF_OBJECT_ATTRIBUTES           deviceAttributes;
     WDF_PNPPOWER_EVENT_CALLBACKS    pnpPowerCallbacks;
+	WDF_IO_QUEUE_CONFIG 			QueueConfig;
+	WDFQUEUE                    	queue;
+	WDFSTRING 						string;
+	UNICODE_STRING 					unicodeString;
     
-    UNREFERENCED_PARAMETER(Driver);
-	
 	debug("Begin EvtDriverDeviceAdd\n");
 
 	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPowerCallbacks);
@@ -629,13 +648,58 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
         &deviceAttributes,
         &device
         );
-
     if (!NT_SUCCESS(status))
     {
         debug("WdfDeviceCreate failed with Status code %d\n", status);
 
         goto exit;
     }
+	
+	
+    // Create a symbolic link for the control object so that usermode can open
+    // the device.
+    
+	debug("WdfDeviceCreateDeviceInterface\n");
+	status = WdfDeviceCreateDeviceInterface(device, (LPGUID) &GUID_DEVINTERFACE_HID, NULL);
+	if(!NT_SUCCESS(status))
+	{
+		debug("WdfDeviceCreateDeviceInterface failed with Status code %d\n", status);
+        goto exit;
+	}
+	
+	debug("WdfStringCreate\n");
+	status = WdfStringCreate(NULL, WDF_NO_OBJECT_ATTRIBUTES, &string);
+	if (NT_SUCCESS(status)) {
+		debug("WdfDeviceRetrieveDeviceInterfaceString\n");
+		status = WdfDeviceRetrieveDeviceInterfaceString(device, &GUID_DEVINTERFACE_HID, NULL, string);
+		if (!NT_SUCCESS(status)) {
+			debug("WdfDeviceRetrieveDeviceInterfaceString failed with Status code %d\n", status);
+			goto exit;
+		}
+	}
+	debug("WdfStringGetUnicodeString\n");
+	WdfStringGetUnicodeString(string, &unicodeString);
+	debug("DeviceInterfaceString : %wZ\n", &unicodeString);
+	
+	// Create Default Queue
+	WDF_IO_QUEUE_CONFIG_INIT(&QueueConfig, WdfIoQueueDispatchSequential);
+	QueueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
+	
+	debug("WdfIoQueueCreate\n");
+	status = WdfIoQueueCreate(device, &QueueConfig, WDF_NO_OBJECT_ATTRIBUTES, &queue);
+	if(!NT_SUCCESS(status))
+	{
+		debug("WdfIoQueueCreate failed with Status code %d\n", status);
+        goto exit;
+	}
+	
+	debug("WdfDeviceConfigureRequestDispatching\n");
+	status = WdfDeviceConfigureRequestDispatching(device, queue, WdfRequestTypeDeviceControl);
+	if(!NT_SUCCESS(status))
+	{
+		debug("WdfDeviceConfigureRequestDispatching failed with Status code %d\n", status);
+        goto exit;
+	}
 
 exit:    
     //

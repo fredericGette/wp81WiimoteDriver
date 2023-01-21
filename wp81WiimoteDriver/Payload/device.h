@@ -7,6 +7,7 @@
 #include <bthddi.h>
 #include <initguid.h> 
 #include <bthguid.h>
+#include <Hidclass.h>
 #include "log.h"
 
 
@@ -44,6 +45,10 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit);
 typedef struct _BRB_L2CA_OPEN_CHANNEL * PBRB_L2CA_OPEN_CHANNEL;
 typedef struct _BRB_L2CA_CLOSE_CHANNEL * PBRB_L2CA_CLOSE_CHANNEL;
 typedef struct _BRB_L2CA_ACL_TRANSFER * PBRB_L2CA_ACL_TRANSFER;
+
+#define WIIMOTE_DEVICE 0x8000
+
+#define IOCTL_WIIMOTE_TEST CTL_CODE(WIIMOTE_DEVICE, 0x800, METHOD_NEITHER, FILE_ANY_ACCESS)
 
 #define SYNCHRONOUS_CALL_TIMEOUT (-1000000000) // 1 Second
 

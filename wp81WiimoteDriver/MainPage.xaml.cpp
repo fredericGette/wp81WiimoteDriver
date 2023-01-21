@@ -238,8 +238,8 @@ void wp81WiimoteDriver::MainPage::Run()
 
 
 	TextTest->Text += L"Calling device...";
-	HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WP81Wiimote", GENERIC_WRITE, FILE_SHARE_WRITE,
-	nullptr, OPEN_EXISTING, 0, nullptr);
+	//HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WP81Wiimote", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+	HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\BTHENUM#Dev_E0E751333260#6&23f92770&0&BluetoothDevice_E0E751333260#{4d1e55b2-f16f-11cf-88cb-001111000030}", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (hDevice == INVALID_HANDLE_VALUE)
 	{
 		debug(L"Failed to open device.");
