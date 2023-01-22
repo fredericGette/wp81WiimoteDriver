@@ -458,6 +458,138 @@ exit:
 	return Status;
 }
 
+NTSTATUS SetReportMode(PWIIMOTE_CONTEXT DeviceContext, BYTE ReportMode)
+{
+	CONST size_t BufferSize = 4;
+	NTSTATUS Status = STATUS_SUCCESS;
+	WDFREQUEST Request;
+	WDFMEMORY Memory;
+	BYTE * Data;
+
+	debug("Begin SetReportMode\n");
+
+	// Get Resources
+	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Device, DeviceContext->IoTarget, BufferSize, &Request, &Memory, (PVOID *)&Data); 
+	if(!NT_SUCCESS(Status))
+	{
+		goto exit;
+	}
+
+	// Fill Buffer	
+	Data[0] = 0xA2;	//HID Output Report
+	Data[1] = 0x12;	//Set ReportMode
+	Data[2] = 0x00;	//Only On Change
+	Data[3] = ReportMode; //Mode
+
+	Status = BluetoothTransferToDevice(DeviceContext, Request, Memory, FALSE);
+	if(!NT_SUCCESS(Status))
+	{
+		goto exit;
+	}
+
+exit:
+	debug("End SetReportMode\n");
+	return Status;
+}
+
+VOID ReadFromDeviceCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQUEST_COMPLETION_PARAMS Params, WDFCONTEXT Context)
+{
+	NTSTATUS Status = STATUS_SUCCESS;
+	PWIIMOTE_CONTEXT DeviceContext;
+	PVOID ReadBuffer;
+	size_t ReadBufferSize;
+	PBRB_L2CA_ACL_TRANSFER BRB;
+	SIZE_T ReadBufferSize2;
+	BYTE ReportID = 0x00;
+
+	debug("Begin ReadFromDeviceCompletion\n");
+
+	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
+	BRB = (PBRB_L2CA_ACL_TRANSFER)Context;
+
+	Status = Params->IoStatus.Status;
+
+	debug("ReadFromDeviceCompletion Result 0x%08X\n", Status);
+
+	if(!NT_SUCCESS(Status))
+	{
+		WdfObjectDelete(Request);
+		goto exit;
+	}
+
+	ReadBuffer = BRB->Buffer;
+	ReadBufferSize = BRB->BufferSize;
+
+	debug("RawBuffer: %I64X\n", (UINT64 * )ReadBuffer);
+	debug("BufferSize: %d - RemainingBufferSize: %d\n", BRB->BufferSize, BRB->RemainingBufferSize);
+
+	ReadBufferSize2 = ReadBufferSize - BRB->RemainingBufferSize;
+	debug("ReadBufferSize2: %d\n", ReadBufferSize2);
+	
+	if(ReadBufferSize2 >= 2)
+	{
+		ReportID = ((BYTE *)ReadBuffer)[1];
+		debug("ReadBuffer[0]: 0x%02X input(wiimote->phone)=0xA1 output(phone->wiimote)=0xA2\n", ((BYTE *)ReadBuffer)[0]);
+		debug("ReadBuffer[1]: 0x%02X (ReportID)\n", ((BYTE *)ReadBuffer)[1]);
+	}
+	debug("ReadBuffer[2]: 0x%02X\n", ((BYTE *)ReadBuffer)[2]);
+	debug("ReadBuffer[3]: 0x%02X\n", ((BYTE *)ReadBuffer)[3]);
+
+exit:
+	debug("End ReadFromDeviceCompletion\n");
+}
+
+NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext)
+{
+	CONST size_t ReadBufferSize = 50;
+	NTSTATUS Status = STATUS_SUCCESS;
+	WDFREQUEST Request;
+	WDFMEMORY Memory;
+	PBRB_L2CA_ACL_TRANSFER BRB;
+	PVOID ReadBuffer = NULL;
+
+	debug("Begin ReadButtons\n");
+
+	//Create Report And Buffer
+	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Device, DeviceContext->IoTarget, ReadBufferSize, &Request, &Memory, &ReadBuffer);
+	if(!NT_SUCCESS(Status))
+	{
+		debug("CreateRequestAndBuffer Failed 0x%08X", Status);
+		goto exit;
+	}
+
+
+	// Create BRB
+	BRB = (PBRB_L2CA_ACL_TRANSFER)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, POOLTAG_WIIMOTE);
+	if (BRB == NULL)
+	{
+		debug("BthAllocateBrb STATUS_INSUFFICIENT_RESOURCES\n");
+		WdfObjectDelete(Request);
+		Status = STATUS_INSUFFICIENT_RESOURCES;
+		goto exit;
+	}
+
+	// Read
+	BRB->BtAddress = 247284104376928;
+	BRB->ChannelHandle = DeviceContext->InterruptChannelHandle;
+	BRB->TransferFlags = ACL_TRANSFER_DIRECTION_IN | ACL_SHORT_TRANSFER_OK;
+	BRB->BufferMDL = NULL;
+	BRB->Buffer = ReadBuffer;
+	BRB->BufferSize = (ULONG)ReadBufferSize;
+
+	Status = SendBRB(DeviceContext, Request, (PBRB)BRB, ReadFromDeviceCompletion);
+	if(!NT_SUCCESS(Status))
+	{
+		debug("SendBRB Failed 0x%08X", Status);
+		return Status;
+	}	
+
+exit:
+	debug("End ReadButtons\n");
+	return Status;
+}
+
+
 VOID InterruptChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQUEST_COMPLETION_PARAMS Params, WDFCONTEXT Context)
 {
 	NTSTATUS Status = STATUS_SUCCESS;
@@ -494,6 +626,7 @@ VOID InterruptChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_R
 	// Start Wiimote functionality
 	debug("WiimoteStart\n");
 	SetLEDs(DeviceContext, WIIMOTE_LEDS_ONE);
+	SetReportMode(DeviceContext, 0x30);
 	
 	debug("End InterruptChannelCompletion\n");
 }
@@ -511,7 +644,7 @@ VOID ControlChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQ
 
 	Status = Params->IoStatus.Status;
 	
-	debug("Control Channel Result %08X (C00000B5 = timeout)\n", Status);
+	debug("Control Channel Result %08X (C00000B5 = timeout; C00000D0=max connection reached)\n", Status);
 
 	if(!NT_SUCCESS(Status))
 	{
@@ -537,15 +670,15 @@ VOID ControlChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQ
 	debug("End ControlChannelCompletion\n");
 }
 
-NTSTATUS BluetoothOpenChannels(PWIIMOTE_CONTEXT DeviceContext)
+NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 {
 	NTSTATUS status;
 	
-	debug("Begin BluetoothOpenChannels\n");
+	debug("Begin ConnectWiimote\n");
 	
 	status = OpenChannel(DeviceContext, NULL, 0x11, NULL, ControlChannelCompletion);
 	
-	debug("End BluetoothOpenChannels\n");
+	debug("End ConnectWiimote\n");
 	
 	return status;
 }
@@ -589,13 +722,13 @@ NTSTATUS EvtDeviceSelfManagedIoInit(WDFDEVICE  Device)
 	debug("devCtx->ProfileDrvInterface=0x%08X\n",&(devCtx->ProfileDrvInterface.BthAllocateBrb));
 	debug("devCtx->ProfileDrvInterface.BthAllocateBrb=0x%08X\n",devCtx->ProfileDrvInterface.BthAllocateBrb);
 	
-	status = BluetoothOpenChannels(devCtx);
-	if(!NT_SUCCESS(status))
-	{
-		goto exit;
-	}
+	// status = ConnectWiimote(devCtx);
+	// if(!NT_SUCCESS(status))
+	// {
+		// goto exit;
+	// }
 	
-exit:
+// exit:
 
 	debug("End EvtDeviceSelfManagedIoInit\n");
     return status;
@@ -603,16 +736,33 @@ exit:
 
 void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferLength, size_t InputBufferLength, ULONG IoControlCode)
 {
-	UNREFERENCED_PARAMETER(Queue);
 	UNREFERENCED_PARAMETER(OutputBufferLength);
 	UNREFERENCED_PARAMETER(InputBufferLength);
+	WDFDEVICE  Device;
 	
 	debug("Begin EvtIoDeviceControl\n");
 	
-	// 0x000b01a8 	IOCTL_HID_GET_COLLECTION_INFORMATION
-	debug("IOCTL_WIIMOTE_TEST=%08X\n",IOCTL_WIIMOTE_TEST);
+	Device = WdfIoQueueGetDevice(Queue);
+	PWIIMOTE_CONTEXT devCtx = GetDeviceContext(Device);
+	
+	debug("IOCTL_HID_GET_COLLECTION_INFORMATION=%08X\n",0x000b01a8);
+	debug("IOCTL_WIIMOTE_CONNECT=%08X\n",IOCTL_WIIMOTE_CONNECT);
+	debug("IOCTL_WIIMOTE_READ=%08X\n",IOCTL_WIIMOTE_READ);
 	debug("IoControlCode=%08X\n",IoControlCode);
-	WdfRequestComplete(Request, STATUS_NOT_SUPPORTED);
+	if (IoControlCode ==  IOCTL_WIIMOTE_CONNECT)
+	{
+		ConnectWiimote(devCtx);
+		WdfRequestComplete(Request, STATUS_SUCCESS);
+	}
+	else if (IoControlCode == IOCTL_WIIMOTE_READ)
+	{
+		ReadButtons(devCtx);
+		WdfRequestComplete(Request, STATUS_SUCCESS);
+	}
+	else 
+	{
+		WdfRequestComplete(Request, STATUS_NOT_SUPPORTED);
+	}
 	
 	debug("End EvtIoDeviceControl\n");
 }

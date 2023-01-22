@@ -14,7 +14,8 @@
     <Page.BottomAppBar>
         <CommandBar>
             <AppBarButton x:Name="InstallAppBarButton" Tag="Install" Label="Install" Icon="Download" Click="AppBarButton_Click"/>
-            <AppBarButton x:Name="RunAppBarButton" Tag="Run" Label="Trigger" Icon="Play" Click="AppBarButton_Click"/>
+            <AppBarButton x:Name="RunAppBarButton" Tag="Run" Label="Connect" Icon="Play" Click="AppBarButton_Click"/>
+            <AppBarButton x:Name="ReadAppBarButton" Tag="Read" Label="Read" Icon="Video" Click="AppBarButton_Click"/>
         </CommandBar>
     </Page.BottomAppBar>
 </Page>

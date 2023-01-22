@@ -23,5 +23,6 @@ namespace wp81WiimoteDriver
 		void AppBarButton_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e);
 		void Install();
 		void Run();
+		void Read();
 	};
 }

@@ -9,7 +9,8 @@
 
 #define WIIMOTE_DEVICE 0x8000
 
-#define IOCTL_WIIMOTE_TEST CTL_CODE(WIIMOTE_DEVICE, 0x800, METHOD_NEITHER, FILE_ANY_ACCESS)
+#define IOCTL_WIIMOTE_CONNECT CTL_CODE(WIIMOTE_DEVICE, 0x800, METHOD_NEITHER, FILE_ANY_ACCESS)
+#define IOCTL_WIIMOTE_READ CTL_CODE(WIIMOTE_DEVICE, 0x801, METHOD_NEITHER, FILE_ANY_ACCESS)
 
 using namespace wp81WiimoteDriver;
 
@@ -69,6 +70,10 @@ void wp81WiimoteDriver::MainPage::AppBarButton_Click(Platform::Object^ sender, W
 	else if (b->Tag->ToString() == "Run")
 	{
 		Run();
+	}
+	else if (b->Tag->ToString() == "Read")
+	{
+		Read();
 	}
 }
 
@@ -250,7 +255,37 @@ void wp81WiimoteDriver::MainPage::Run()
 	DWORD data = 0;
 
 	DWORD returned;
-	BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_TEST, &radio_handle, sizeof(radio_handle), nullptr, 0, &returned, nullptr);
+	BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_CONNECT, &radio_handle, sizeof(radio_handle), nullptr, 0, &returned, nullptr);
+	if (success)
+	{
+		debug(L"Device call succeeded!\n");
+		TextTest->Text += L"succeeded!\n";
+	}
+	else
+	{
+		debug(L"Device call failed!\n");
+		TextTest->Text += L"failed!\n";
+	}
+
+	CloseHandle(hDevice);
+}
+
+void wp81WiimoteDriver::MainPage::Read()
+{
+
+	TextTest->Text += L"Reading device...";
+	HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\BTHENUM#Dev_E0E751333260#6&23f92770&0&BluetoothDevice_E0E751333260#{4d1e55b2-f16f-11cf-88cb-001111000030}", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+	if (hDevice == INVALID_HANDLE_VALUE)
+	{
+		debug(L"Failed to open device.");
+		TextTest->Text += L"Failed to open device.\n";
+		return;
+	}
+
+	DWORD data = 0;
+
+	DWORD returned;
+	BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_READ, nullptr, 0, nullptr, 0, &returned, nullptr);
 	if (success)
 	{
 		debug(L"Device call succeeded!\n");
