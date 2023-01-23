@@ -492,53 +492,6 @@ exit:
 	return Status;
 }
 
-VOID ReadFromDeviceCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQUEST_COMPLETION_PARAMS Params, WDFCONTEXT Context)
-{
-	NTSTATUS Status = STATUS_SUCCESS;
-	PWIIMOTE_CONTEXT DeviceContext;
-	PVOID ReadBuffer;
-	size_t ReadBufferSize;
-	PBRB_L2CA_ACL_TRANSFER BRB;
-	SIZE_T ReadBufferSize2;
-	BYTE ReportID = 0x00;
-
-	debug("Begin ReadFromDeviceCompletion\n");
-
-	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
-	BRB = (PBRB_L2CA_ACL_TRANSFER)Context;
-
-	Status = Params->IoStatus.Status;
-
-	debug("ReadFromDeviceCompletion Result 0x%08X\n", Status);
-
-	if(!NT_SUCCESS(Status))
-	{
-		WdfObjectDelete(Request);
-		goto exit;
-	}
-
-	ReadBuffer = BRB->Buffer;
-	ReadBufferSize = BRB->BufferSize;
-
-	debug("RawBuffer: %I64X\n", (UINT64 * )ReadBuffer);
-	debug("BufferSize: %d - RemainingBufferSize: %d\n", BRB->BufferSize, BRB->RemainingBufferSize);
-
-	ReadBufferSize2 = ReadBufferSize - BRB->RemainingBufferSize;
-	debug("ReadBufferSize2: %d\n", ReadBufferSize2);
-	
-	if(ReadBufferSize2 >= 2)
-	{
-		ReportID = ((BYTE *)ReadBuffer)[1];
-		debug("ReadBuffer[0]: 0x%02X input(wiimote->phone)=0xA1 output(phone->wiimote)=0xA2\n", ((BYTE *)ReadBuffer)[0]);
-		debug("ReadBuffer[1]: 0x%02X (ReportID)\n", ((BYTE *)ReadBuffer)[1]);
-	}
-	debug("ReadBuffer[2]: 0x%02X\n", ((BYTE *)ReadBuffer)[2]);
-	debug("ReadBuffer[3]: 0x%02X\n", ((BYTE *)ReadBuffer)[3]);
-
-exit:
-	debug("End ReadFromDeviceCompletion\n");
-}
-
 NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext)
 {
 	CONST size_t ReadBufferSize = 50;
@@ -577,12 +530,25 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext)
 	BRB->Buffer = ReadBuffer;
 	BRB->BufferSize = (ULONG)ReadBufferSize;
 
-	Status = SendBRB(DeviceContext, Request, (PBRB)BRB, ReadFromDeviceCompletion);
+	Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRB);
 	if(!NT_SUCCESS(Status))
 	{
 		debug("SendBRB Failed 0x%08X", Status);
-		return Status;
+		goto exit;
 	}	
+	PVOID ReadBuffer2 = BRB->Buffer;
+	size_t ReadBufferSize2 = BRB->BufferSize;
+
+	debug("RawBuffer: %I64X\n", (UINT64 * )ReadBuffer2);
+	debug("BufferSize: %d - RemainingBufferSize: %d\n", BRB->BufferSize, BRB->RemainingBufferSize);
+	
+	if(ReadBufferSize2 >= 2)
+	{
+		debug("ReadBuffer[0]: 0x%02X input(wiimote->phone)=0xA1 output(phone->wiimote)=0xA2\n", ((BYTE *)ReadBuffer2)[0]);
+		debug("ReadBuffer[1]: 0x%02X (ReportID)\n", ((BYTE *)ReadBuffer2)[1]);
+		debug("ReadBuffer[2]: 0x%02X\n", ((BYTE *)ReadBuffer2)[2]);
+		debug("ReadBuffer[3]: 0x%02X\n", ((BYTE *)ReadBuffer2)[3]);
+	}
 
 exit:
 	debug("End ReadButtons\n");
@@ -678,61 +644,11 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	
 	status = OpenChannel(DeviceContext, NULL, 0x11, NULL, ControlChannelCompletion);
 	
+//exit:
 	debug("End ConnectWiimote\n");
-	
 	return status;
 }
 
-// Our one time initialization
-NTSTATUS EvtDeviceSelfManagedIoInit(WDFDEVICE  Device)
-{
-	NTSTATUS status;
-	
-	debug("Begin EvtDeviceSelfManagedIoInit\n");
-
-    PWIIMOTE_CONTEXT devCtx = GetDeviceContext(Device);
-	debug("devCtx=0x%08X\n",devCtx);
-	debug("&devCtx->Device=0x%08X\n",&(devCtx->Device));
-	debug("devCtx->Device=0x%08X\n",devCtx->Device);
-	debug("devCtx->IoTarget=0x%08X\n",devCtx->IoTarget);
-	debug("devCtx->ProfileDrvInterface=0x%08X\n",&(devCtx->ProfileDrvInterface));
-	debug("devCtx->ProfileDrvInterface.BthAllocateBrb=0x%08X\n",devCtx->ProfileDrvInterface.BthAllocateBrb);
-	
-	devCtx->Device = Device;
-	devCtx->IoTarget = WdfDeviceGetIoTarget(Device);
-	
-	status = WdfFdoQueryForInterface(
-		devCtx->Device,
-		&GUID_BTHDDI_PROFILE_DRIVER_INTERFACE,
-		(PINTERFACE)(&devCtx->ProfileDrvInterface),
-		sizeof(devCtx->ProfileDrvInterface),
-		BTHDDI_PROFILE_DRIVER_INTERFACE_VERSION_FOR_QI,
-		NULL
-	);
-	
-	if (!NT_SUCCESS(status))
-    {
-        debug("WdfFdoQueryForInterface failed, Status code %d\n", status);        
-    }
-
-	debug("&devCtx->Device=0x%08X\n",&(devCtx->Device));
-	debug("devCtx->Device=0x%08X\n",devCtx->Device);
-	debug("Device=0x%08X\n",Device);
-	debug("devCtx->IoTarget=0x%08X\n",devCtx->IoTarget);
-	debug("devCtx->ProfileDrvInterface=0x%08X\n",&(devCtx->ProfileDrvInterface.BthAllocateBrb));
-	debug("devCtx->ProfileDrvInterface.BthAllocateBrb=0x%08X\n",devCtx->ProfileDrvInterface.BthAllocateBrb);
-	
-	// status = ConnectWiimote(devCtx);
-	// if(!NT_SUCCESS(status))
-	// {
-		// goto exit;
-	// }
-	
-// exit:
-
-	debug("End EvtDeviceSelfManagedIoInit\n");
-    return status;
-}
 
 void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferLength, size_t InputBufferLength, ULONG IoControlCode)
 {
@@ -773,20 +689,12 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
 	NTSTATUS                        status;
     WDFDEVICE                       device;    
     WDF_OBJECT_ATTRIBUTES           deviceAttributes;
-    WDF_PNPPOWER_EVENT_CALLBACKS    pnpPowerCallbacks;
 	WDF_IO_QUEUE_CONFIG 			QueueConfig;
 	WDFQUEUE                    	queue;
 	WDFSTRING 						string;
 	UNICODE_STRING 					unicodeString;
     
 	debug("Begin EvtDriverDeviceAdd\n");
-
-	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPowerCallbacks);
-    pnpPowerCallbacks.EvtDevicePrepareHardware = EvtDevicePrepareHardware;
-    pnpPowerCallbacks.EvtDeviceD0Entry = EvtDeviceD0Entry;
-    pnpPowerCallbacks.EvtDeviceD0Exit = EvtDeviceD0Exit;
-	pnpPowerCallbacks.EvtDeviceSelfManagedIoInit = EvtDeviceSelfManagedIoInit;
-    WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPowerCallbacks);
 
     //
     // Set device attributes
@@ -801,13 +709,29 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
     if (!NT_SUCCESS(status))
     {
         debug("WdfDeviceCreate failed with Status code %d\n", status);
-
         goto exit;
+    }
+
+	PWIIMOTE_CONTEXT devCtx = GetDeviceContext(device);
+	devCtx->Device = device;
+	devCtx->IoTarget = WdfDeviceGetIoTarget(device);
+	
+	status = WdfFdoQueryForInterface(
+		device,
+		&GUID_BTHDDI_PROFILE_DRIVER_INTERFACE,
+		(PINTERFACE)(&devCtx->ProfileDrvInterface),
+		sizeof(devCtx->ProfileDrvInterface),
+		BTHDDI_PROFILE_DRIVER_INTERFACE_VERSION_FOR_QI,
+		NULL
+	);
+	if (!NT_SUCCESS(status))
+    {
+        debug("WdfFdoQueryForInterface failed, Status code %d\n", status);  
+		goto exit;		
     }
 	
 	
-    // Create a symbolic link for the control object so that usermode can open
-    // the device.
+    // Create an interface so that usermode can open the device.
     
 	debug("WdfDeviceCreateDeviceInterface\n");
 	status = WdfDeviceCreateDeviceInterface(device, (LPGUID) &GUID_DEVINTERFACE_HID, NULL);
@@ -827,11 +751,12 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
 			goto exit;
 		}
 	}
+	
 	debug("WdfStringGetUnicodeString\n");
 	WdfStringGetUnicodeString(string, &unicodeString);
 	debug("DeviceInterfaceString : %wZ\n", &unicodeString);
 	
-	// Create Default Queue
+	// Create Queue for IOCTL
 	WDF_IO_QUEUE_CONFIG_INIT(&QueueConfig, WdfIoQueueDispatchSequential);
 	QueueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
 	
