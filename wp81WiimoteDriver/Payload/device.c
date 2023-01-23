@@ -1,33 +1,5 @@
 #include "device.h"
 
-NTSTATUS EvtDevicePrepareHardware(WDFDEVICE Device, WDFCMRESLIST ResourceList, WDFCMRESLIST ResourceListTranslated)
-{
-	UNREFERENCED_PARAMETER(Device);
-	UNREFERENCED_PARAMETER(ResourceList);
-	UNREFERENCED_PARAMETER(ResourceListTranslated);
-	debug("Begin EvtDevicePrepareHardware\n");
-	debug("End EvtDevicePrepareHardware\n");
-	return STATUS_SUCCESS;
-}
-
-NTSTATUS EvtDeviceD0Entry(WDFDEVICE Device, WDF_POWER_DEVICE_STATE  PreviousState)
-{
-	UNREFERENCED_PARAMETER(Device);
-	UNREFERENCED_PARAMETER(PreviousState);
-	debug("Begin EvtDeviceD0Entry\n");
-	debug("End EvtDeviceD0Entry\n");
-	return STATUS_SUCCESS;
-}
-
-NTSTATUS EvtDeviceD0Exit(WDFDEVICE Device, WDF_POWER_DEVICE_STATE TargetState)
-{
-	UNREFERENCED_PARAMETER(Device);
-	UNREFERENCED_PARAMETER(TargetState);
-	debug("Begin EvtDeviceD0Exit\n");
-	debug("End EvtDeviceD0Exit\n");
-	return STATUS_SUCCESS;
-}
-
 NTSTATUS CreateRequest(WDFDEVICE Device, WDFIOTARGET IoTarget, WDFREQUEST * Request)
 {
 	NTSTATUS Status = STATUS_SUCCESS;
@@ -282,6 +254,7 @@ NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Re
 	
 	if(DeviceContext->InterruptChannelHandle == NULL)
 	{
+		debug("InterruptChannelHandle is null.\n");
 		Status = STATUS_INVALID_HANDLE;
 		goto exit;
 	}
@@ -290,6 +263,7 @@ NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Re
 	BRBTransfer = (PBRB_L2CA_ACL_TRANSFER)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, POOLTAG_WIIMOTE);
 	if (BRBTransfer == NULL)
 	{
+		debug("BthAllocateBrb failed\n");
 		Status = STATUS_INSUFFICIENT_RESOURCES;
 		goto exit;
 	}
@@ -305,9 +279,11 @@ NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Re
 	if(Synchronous)
 	{
 		Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRBTransfer);
+		WdfObjectDelete(Request);
 		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBTransfer);
 		if(!NT_SUCCESS(Status))
 		{
+			debug("BthFreeBrb failed : 0x%08X\n", Status);
 			goto exit;
 		}
 	}
@@ -330,15 +306,12 @@ VOID L2CAPCallback(PVOID Context, INDICATION_CODE Indication, PINDICATION_PARAME
 {
 	debug("Begin L2CAPCallback\n");
 	
-	//WDF_DEVICE_STATE NewDeviceState;
 	PWIIMOTE_CONTEXT DeviceContext = (PWIIMOTE_CONTEXT)Context;
 
-	//UNREFERENCED_PARAMETER(Context);
 	UNREFERENCED_PARAMETER(Parameters);
 	
 	debug("L2CAP Channel Callback\n");
-	debug("Indication: %u\n", Indication);
-	
+	debug("Indication: %u\n", Indication);	
 
 	if(Indication == IndicationRemoteDisconnect)
 	{
@@ -350,80 +323,11 @@ VOID L2CAPCallback(PVOID Context, INDICATION_CODE Indication, PINDICATION_PARAME
 	
 		debug("WiimoteReset\n");
 		debug("Signal Device Is Gone\n");
-
-		//WDF_DEVICE_STATE_INIT (&NewDeviceState);
-
-		//HidNotifyPresence(WdfDeviceWdmGetDeviceObject(DeviceContext->Device), FALSE);
-		
-		//WdfDeviceGetDeviceState(DeviceContext->Device, &NewDeviceState);
-		//NewDeviceState.Removed = WdfTrue;
-		//WdfDeviceSetDeviceState(DeviceContext->Device, &NewDeviceState);
-		//WdfPdoMarkMissing(DeviceContext->Device);
 	}
 	
 	debug("End L2CAPCallback\n");
 }
 
-NTSTATUS OpenChannel(PWIIMOTE_CONTEXT DeviceContext, PBRB PreAllocatedBRB, BYTE PSM, PFNBTHPORT_INDICATION_CALLBACK ChannelCallback,PFN_WDF_REQUEST_COMPLETION_ROUTINE ChannelCompletion)
-{
-	NTSTATUS Status = STATUS_SUCCESS;
-	PBRB_L2CA_OPEN_CHANNEL BRBOpenChannel;
-
-	debug("Begin OpenChannel\n");
-
-	//Create or reuse BRB
-	if(PreAllocatedBRB == NULL)
-	{
-		BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, POOLTAG_WIIMOTE);
-		if (BRBOpenChannel == NULL)
-		{
-			Status = STATUS_INSUFFICIENT_RESOURCES;
-			goto exit;
-		}
-	}
-	else
-	{
-		DeviceContext->ProfileDrvInterface.BthReuseBrb(PreAllocatedBRB, BRB_L2CA_OPEN_CHANNEL);
-		BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)PreAllocatedBRB;
-	}
-	
-	//Fill BRB
-	BRBOpenChannel->BtAddress = 247284104376928;
-	BRBOpenChannel->Psm = PSM; //0x13
-	BRBOpenChannel->ChannelFlags = 0;
-	BRBOpenChannel->ConfigOut.Flags = 0;
-    BRBOpenChannel->ConfigOut.Mtu.Max = L2CAP_DEFAULT_MTU;
-    BRBOpenChannel->ConfigOut.Mtu.Min = L2CAP_MIN_MTU;
-    BRBOpenChannel->ConfigOut.Mtu.Preferred = L2CAP_DEFAULT_MTU;
-	BRBOpenChannel->ConfigOut.FlushTO.Max = L2CAP_DEFAULT_FLUSHTO;
-	BRBOpenChannel->ConfigOut.FlushTO.Min = L2CAP_MIN_FLUSHTO;
-	BRBOpenChannel->ConfigOut.FlushTO.Preferred = L2CAP_DEFAULT_FLUSHTO;
-	BRBOpenChannel->ConfigOut.ExtraOptions = 0;
-	BRBOpenChannel->ConfigOut.NumExtraOptions = 0;
-	BRBOpenChannel->ConfigOut.LinkTO = 0;
-
-    BRBOpenChannel->IncomingQueueDepth = 50;
-    BRBOpenChannel->ReferenceObject = (PVOID) WdfDeviceWdmGetDeviceObject(DeviceContext->Device);
-   
-	if(ChannelCallback != NULL)
-	{
-		BRBOpenChannel->CallbackFlags = CALLBACK_DISCONNECT;                                                   
-		BRBOpenChannel->Callback = ChannelCallback; //L2CAPCallback;
-		BRBOpenChannel->CallbackContext = (PVOID)DeviceContext;
-	}
-
-	//SendBRB
-	Status = SendBRB(DeviceContext, NULL, (PBRB)BRBOpenChannel, ChannelCompletion);
-	if(!NT_SUCCESS(Status))
-	{
-		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBOpenChannel);
-		goto exit;
-	}
-
-exit:
-	debug("End OpenChannel\n");
-	return Status;
-}
 
 NTSTATUS SetLEDs(PWIIMOTE_CONTEXT DeviceContext, BYTE LEDFlag)
 {
@@ -447,7 +351,7 @@ NTSTATUS SetLEDs(PWIIMOTE_CONTEXT DeviceContext, BYTE LEDFlag)
 	Data[1] = 0x11;	//Player LED
 	Data[2] = LEDFlag;
 
-	Status = BluetoothTransferToDevice(DeviceContext, Request, Memory, FALSE);
+	Status = BluetoothTransferToDevice(DeviceContext, Request, Memory, TRUE);
 	if(!NT_SUCCESS(Status))
 	{
 		goto exit;
@@ -481,7 +385,7 @@ NTSTATUS SetReportMode(PWIIMOTE_CONTEXT DeviceContext, BYTE ReportMode)
 	Data[2] = 0x00;	//Only On Change
 	Data[3] = ReportMode; //Mode
 
-	Status = BluetoothTransferToDevice(DeviceContext, Request, Memory, FALSE);
+	Status = BluetoothTransferToDevice(DeviceContext, Request, Memory, TRUE);
 	if(!NT_SUCCESS(Status))
 	{
 		goto exit;
@@ -510,7 +414,6 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext)
 		debug("CreateRequestAndBuffer Failed 0x%08X", Status);
 		goto exit;
 	}
-
 
 	// Create BRB
 	BRB = (PBRB_L2CA_ACL_TRANSFER)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, POOLTAG_WIIMOTE);
@@ -555,98 +458,141 @@ exit:
 	return Status;
 }
 
-
-VOID InterruptChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQUEST_COMPLETION_PARAMS Params, WDFCONTEXT Context)
+NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 {
-	NTSTATUS Status = STATUS_SUCCESS;
-	PWIIMOTE_CONTEXT DeviceContext;
-	PBRB_L2CA_OPEN_CHANNEL UsedBRBOpenChannel;
-
-	debug("Begin InterruptChannelCompletion\n");
-
-	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
-	UsedBRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)Context;
-
-	Status = Params->IoStatus.Status;
+	NTSTATUS Status;
+	WDFREQUEST Request;
+	PBRB_L2CA_OPEN_CHANNEL BRBOpenChannel;
 	
-	debug("Interrupt Channel Result %08X\n", Status);
+	debug("Begin ConnectWiimote\n");
+	
+	/////////// control pipe ///////////
+	
+	//Create BRB
+	BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, POOLTAG_WIIMOTE);
+	if (BRBOpenChannel == NULL)
+	{
+		debug("BthAllocateBrb Failed\n");
+		Status = STATUS_INSUFFICIENT_RESOURCES;
+		goto exit;
+	}
+	
+	//Fill BRB
+	BRBOpenChannel->BtAddress = 247284104376928;
+	BRBOpenChannel->Psm = 0x11;
+	BRBOpenChannel->ChannelFlags = 0;
+	BRBOpenChannel->ConfigOut.Flags = 0;
+    BRBOpenChannel->ConfigOut.Mtu.Max = L2CAP_DEFAULT_MTU;
+    BRBOpenChannel->ConfigOut.Mtu.Min = L2CAP_MIN_MTU;
+    BRBOpenChannel->ConfigOut.Mtu.Preferred = L2CAP_DEFAULT_MTU;
+	BRBOpenChannel->ConfigOut.FlushTO.Max = L2CAP_DEFAULT_FLUSHTO;
+	BRBOpenChannel->ConfigOut.FlushTO.Min = L2CAP_MIN_FLUSHTO;
+	BRBOpenChannel->ConfigOut.FlushTO.Preferred = L2CAP_DEFAULT_FLUSHTO;
+	BRBOpenChannel->ConfigOut.ExtraOptions = 0;
+	BRBOpenChannel->ConfigOut.NumExtraOptions = 0;
+	BRBOpenChannel->ConfigOut.LinkTO = 0;
 
+    BRBOpenChannel->IncomingQueueDepth = 50;
+    BRBOpenChannel->ReferenceObject = (PVOID) WdfDeviceWdmGetDeviceObject(DeviceContext->Device);
+   
+	Status = CreateRequest(DeviceContext->Device, DeviceContext->IoTarget, &Request);
 	if(!NT_SUCCESS(Status))
 	{
-		CleanUpCompletedRequest(Request, IoTarget, Context);
+		debug("CreateRequest Failed 0x%08X\n", Status);
+		goto exit;
+	}
+   
+	//SendBRB
+	Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRBOpenChannel);
+	if(!NT_SUCCESS(Status))
+	{
+		debug("SendBRB Failed 0x%08X\n", Status);
+		debug("Control Channel Result %08X (C00000B5 = timeout; C00000D0=max connection reached)\n", Status);
+		
 		if(Status == STATUS_IO_TIMEOUT)
 		{
 			debug("Signal Device Is Gone\n");
 		}
-		else 
+
+		WdfObjectDelete(Request);		
+		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBOpenChannel);
+		goto exit;
+	}	
+
+	DeviceContext->ControlChannelHandle = BRBOpenChannel->ChannelHandle;
+	WdfObjectDelete(Request);		
+	DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBOpenChannel);
+
+	/////////// data pipe ///////////
+
+	//Create BRB
+	BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, POOLTAG_WIIMOTE);
+	if (BRBOpenChannel == NULL)
+	{
+		debug("BthAllocateBrb Failed\n");
+		Status = STATUS_INSUFFICIENT_RESOURCES;
+		goto exit;
+	}
+	
+	//Fill BRB
+	BRBOpenChannel->BtAddress = 247284104376928;
+	BRBOpenChannel->Psm = 0x13;
+	BRBOpenChannel->ChannelFlags = 0;
+	BRBOpenChannel->ConfigOut.Flags = 0;
+    BRBOpenChannel->ConfigOut.Mtu.Max = L2CAP_DEFAULT_MTU;
+    BRBOpenChannel->ConfigOut.Mtu.Min = L2CAP_MIN_MTU;
+    BRBOpenChannel->ConfigOut.Mtu.Preferred = L2CAP_DEFAULT_MTU;
+	BRBOpenChannel->ConfigOut.FlushTO.Max = L2CAP_DEFAULT_FLUSHTO;
+	BRBOpenChannel->ConfigOut.FlushTO.Min = L2CAP_MIN_FLUSHTO;
+	BRBOpenChannel->ConfigOut.FlushTO.Preferred = L2CAP_DEFAULT_FLUSHTO;
+	BRBOpenChannel->ConfigOut.ExtraOptions = 0;
+	BRBOpenChannel->ConfigOut.NumExtraOptions = 0;
+	BRBOpenChannel->ConfigOut.LinkTO = 0;
+
+    BRBOpenChannel->IncomingQueueDepth = 50;
+    BRBOpenChannel->ReferenceObject = (PVOID) WdfDeviceWdmGetDeviceObject(DeviceContext->Device);
+   
+	BRBOpenChannel->CallbackFlags = CALLBACK_DISCONNECT;                                                   
+	BRBOpenChannel->Callback = L2CAPCallback;
+	BRBOpenChannel->CallbackContext = (PVOID)DeviceContext;
+   
+	Status = CreateRequest(DeviceContext->Device, DeviceContext->IoTarget, &Request);
+	if(!NT_SUCCESS(Status))
+	{
+		debug("CreateRequest Failed 0x%08X\n", Status);
+		goto exit;
+	}
+   
+	//SendBRB
+	Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRBOpenChannel);
+	if(!NT_SUCCESS(Status))
+	{
+		debug("SendBRB Failed 0x%08X\n", Status);
+		debug("Control Channel Result %08X (C00000B5 = timeout; C00000D0=max connection reached)\n", Status);
+		
+		if(Status == STATUS_IO_TIMEOUT)
 		{
-			WdfDeviceSetFailed(DeviceContext->Device, WdfDeviceFailedNoRestart);
+			debug("Signal Device Is Gone\n");
 		}
 
-		return;
-	}
+		WdfObjectDelete(Request);		
+		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBOpenChannel);
+		goto exit;
+	}	
 
-	DeviceContext->InterruptChannelHandle = UsedBRBOpenChannel->ChannelHandle;
-	CleanUpCompletedRequest(Request, IoTarget, Context);
+	DeviceContext->InterruptChannelHandle = BRBOpenChannel->ChannelHandle;
+	WdfObjectDelete(Request);		
+	DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBOpenChannel);
 	
 	// Start Wiimote functionality
 	debug("WiimoteStart\n");
 	SetLEDs(DeviceContext, WIIMOTE_LEDS_ONE);
 	SetReportMode(DeviceContext, 0x30);
+
 	
-	debug("End InterruptChannelCompletion\n");
-}
-
-VOID ControlChannelCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget, PWDF_REQUEST_COMPLETION_PARAMS Params, WDFCONTEXT Context)
-{
-	NTSTATUS Status = STATUS_SUCCESS;
-	PWIIMOTE_CONTEXT DeviceContext;
-	PBRB_L2CA_OPEN_CHANNEL UsedBRBOpenChannel;
-
-	debug("Begin ControlChannelCompletion\n");
-
-	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
-	UsedBRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)Context;
-
-	Status = Params->IoStatus.Status;
-	
-	debug("Control Channel Result %08X (C00000B5 = timeout; C00000D0=max connection reached)\n", Status);
-
-	if(!NT_SUCCESS(Status))
-	{
-		CleanUpCompletedRequest(Request, IoTarget, Context);
-		if(Status == STATUS_IO_TIMEOUT)
-		{
-			debug("Signal Device Is Gone\n");
-		}
-		else 
-		{
-			WdfDeviceSetFailed(DeviceContext->Device, WdfDeviceFailedNoRestart);
-		}
-
-		return;
-	}
-
-	DeviceContext->ControlChannelHandle = UsedBRBOpenChannel->ChannelHandle;
-	CleanUpCompletedRequest(Request, IoTarget, Context);
-	
-	// Open Interrupt Channel
-	OpenChannel(DeviceContext, NULL, 0x13, L2CAPCallback, InterruptChannelCompletion);
-	
-	debug("End ControlChannelCompletion\n");
-}
-
-NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
-{
-	NTSTATUS status;
-	
-	debug("Begin ConnectWiimote\n");
-	
-	status = OpenChannel(DeviceContext, NULL, 0x11, NULL, ControlChannelCompletion);
-	
-//exit:
+exit:
 	debug("End ConnectWiimote\n");
-	return status;
+	return Status;
 }
 
 
