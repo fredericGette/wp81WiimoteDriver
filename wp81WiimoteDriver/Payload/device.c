@@ -186,6 +186,7 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 	Status = PrepareRequest(DeviceContext->IoTarget, BRB, Request);
 	if(!NT_SUCCESS(Status))
 	{
+		debug("PrepareRequest failed : 0x%08X\n", Status);
 		WdfObjectDelete(Request);
 		goto exit;
 	}
@@ -193,6 +194,7 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 	Status = WdfRequestAllocateTimer(Request);
 	if(!NT_SUCCESS(Status))
 	{
+		debug("WdfRequestAllocateTimer failed : 0x%08X\n", Status);
 		WdfObjectDelete(Request);
 		goto exit;
 	}
@@ -210,6 +212,7 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 
 	if(!NT_SUCCESS(Status))
 	{
+		debug("WdfRequestGetStatus failed : 0x%08X\n", Status);
 		WdfObjectDelete(Request);
 		goto exit;
 	}
@@ -396,7 +399,7 @@ exit:
 	return Status;
 }
 
-NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext)
+NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 {
 	CONST size_t ReadBufferSize = 50;
 	NTSTATUS Status = STATUS_SUCCESS;
@@ -451,6 +454,10 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext)
 		debug("ReadBuffer[1]: 0x%02X (ReportID)\n", ((BYTE *)ReadBuffer2)[1]);
 		debug("ReadBuffer[2]: 0x%02X\n", ((BYTE *)ReadBuffer2)[2]);
 		debug("ReadBuffer[3]: 0x%02X\n", ((BYTE *)ReadBuffer2)[3]);
+		((BYTE *)Buffer)[0] = ((BYTE *)ReadBuffer2)[0];
+		((BYTE *)Buffer)[1] = ((BYTE *)ReadBuffer2)[1];
+		((BYTE *)Buffer)[2] = ((BYTE *)ReadBuffer2)[2];
+		((BYTE *)Buffer)[3] = ((BYTE *)ReadBuffer2)[3];
 	}
 
 exit:
@@ -618,14 +625,39 @@ void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferL
 	}
 	else if (IoControlCode == IOCTL_WIIMOTE_READ)
 	{
-		ReadButtons(devCtx);
-		WdfRequestComplete(Request, STATUS_SUCCESS);
+		USHORT  requiredSize = 4;
+		PVOID   Buffer;
+		size_t  bytesReturned = 0;
+		//
+        // Get the buffer. Make sure the buffer is big enough
+        //
+        NTSTATUS status = WdfRequestRetrieveOutputBuffer(
+                                                Request, 
+                                                (size_t)requiredSize,
+                                                &Buffer,
+                                                NULL
+                                                );
+        if(!NT_SUCCESS(status)){
+			debug("WdfRequestRetrieveOutputBuffer failed : 0x%08X\n", status);
+			WdfRequestComplete(Request, status);
+            goto exit;
+        }
+		
+		
+		ReadButtons(devCtx, Buffer);
+		bytesReturned = 4;
+		WdfRequestCompleteWithInformation(
+                                      Request,
+                                      STATUS_SUCCESS,
+                                      bytesReturned
+                                      );
 	}
 	else 
 	{
 		WdfRequestComplete(Request, STATUS_NOT_SUPPORTED);
 	}
-	
+
+exit:	
 	debug("End EvtIoDeviceControl\n");
 }
 

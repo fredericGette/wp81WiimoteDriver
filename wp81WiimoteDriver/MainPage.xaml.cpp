@@ -10,7 +10,7 @@
 #define WIIMOTE_DEVICE 0x8000
 
 #define IOCTL_WIIMOTE_CONNECT CTL_CODE(WIIMOTE_DEVICE, 0x800, METHOD_NEITHER, FILE_ANY_ACCESS)
-#define IOCTL_WIIMOTE_READ CTL_CODE(WIIMOTE_DEVICE, 0x801, METHOD_NEITHER, FILE_ANY_ACCESS)
+#define IOCTL_WIIMOTE_READ CTL_CODE(WIIMOTE_DEVICE, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 using namespace wp81WiimoteDriver;
 
@@ -26,10 +26,12 @@ using namespace Windows::UI::Xaml::Media;
 using namespace Windows::UI::Xaml::Navigation;
 using namespace Windows::Storage;
 using namespace concurrency;
+using namespace Windows::UI::Core;
 
 // The Blank Page item template is documented at http://go.microsoft.com/fwlink/?LinkId=234238
 
 Win32Api win32Api;
+char OutputBuffer[100];
 
 MainPage::MainPage()
 {
@@ -243,58 +245,74 @@ void wp81WiimoteDriver::MainPage::Run()
 
 
 	TextTest->Text += L"Calling device...";
-	HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\BTHENUM#Dev_E0E751333260#6&23f92770&0&BluetoothDevice_E0E751333260#{4d1e55b2-f16f-11cf-88cb-001111000030}", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (hDevice == INVALID_HANDLE_VALUE)
+	create_task([this]()
 	{
-		debug(L"Failed to open device.");
-		TextTest->Text += L"Failed to open device.\n";
-		return;
-	}
+		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\BTHENUM#Dev_E0E751333260#6&23f92770&0&BluetoothDevice_E0E751333260#{4d1e55b2-f16f-11cf-88cb-001111000030}", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+		if (hDevice == INVALID_HANDLE_VALUE)
+		{
+			debug(L"Failed to open device.");
+			UIConsoleAddText(L"Failed to open device.\n");
+			return;
+		}
 
-	DWORD data = 0;
+		DWORD returned;
+		BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_CONNECT, nullptr, 0, nullptr, 0, &returned, nullptr);
+		if (success)
+		{
+			debug(L"Device call succeeded!\n");
+			UIConsoleAddText(L"succeeded!\n");
+		}
+		else
+		{
+			debug(L"Device call failed!\n");
+			UIConsoleAddText(L"failed!\n");
+		}
 
-	DWORD returned;
-	BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_CONNECT, &radio_handle, sizeof(radio_handle), nullptr, 0, &returned, nullptr);
-	if (success)
-	{
-		debug(L"Device call succeeded!\n");
-		TextTest->Text += L"succeeded!\n";
-	}
-	else
-	{
-		debug(L"Device call failed!\n");
-		TextTest->Text += L"failed!\n";
-	}
-
-	CloseHandle(hDevice);
+		CloseHandle(hDevice);
+	});
 }
 
 void wp81WiimoteDriver::MainPage::Read()
 {
 
 	TextTest->Text += L"Reading device...";
-	HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\BTHENUM#Dev_E0E751333260#6&23f92770&0&BluetoothDevice_E0E751333260#{4d1e55b2-f16f-11cf-88cb-001111000030}", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (hDevice == INVALID_HANDLE_VALUE)
+	create_task([this]()
 	{
-		debug(L"Failed to open device.");
-		TextTest->Text += L"Failed to open device.\n";
-		return;
-	}
+		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\BTHENUM#Dev_E0E751333260#6&23f92770&0&BluetoothDevice_E0E751333260#{4d1e55b2-f16f-11cf-88cb-001111000030}", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+		if (hDevice == INVALID_HANDLE_VALUE)
+		{
+			debug(L"Failed to open device.");
+			UIConsoleAddText(L"Failed to open device.\n");
+			return;
+		}
 
-	DWORD data = 0;
+		while (true) {
+			DWORD returned;
+			ZeroMemory(OutputBuffer, sizeof(OutputBuffer));
+			BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_READ, nullptr, 0, &OutputBuffer, sizeof(OutputBuffer), &returned, nullptr);
+			if (success)
+			{
+				debug(L"Device call succeeded!\n");
+				debug(L"returned %d\n", returned);
+				debug(L"[0x%02X 0x%02X 0x%02X 0x%02X]\n", ((BYTE *)OutputBuffer)[0], ((BYTE *)OutputBuffer)[1], ((BYTE *)OutputBuffer)[2], ((BYTE *)OutputBuffer)[3]);
+				UIConsoleAddText(L"succeeded!\n");
+			}
+			else
+			{
+				debug(L"Device call failed!\n");
+				UIConsoleAddText("failed!\n");
+			}
+		}
 
-	DWORD returned;
-	BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_READ, nullptr, 0, nullptr, 0, &returned, nullptr);
-	if (success)
+		CloseHandle(hDevice);
+	});
+}
+
+void MainPage::UIConsoleAddText(Platform::String ^ text) {
+	Dispatcher->RunAsync(
+		CoreDispatcherPriority::Normal,
+		ref new DispatchedHandler([this, text]()
 	{
-		debug(L"Device call succeeded!\n");
-		TextTest->Text += L"succeeded!\n";
-	}
-	else
-	{
-		debug(L"Device call failed!\n");
-		TextTest->Text += L"failed!\n";
-	}
-
-	CloseHandle(hDevice);
+		TextTest->Text += text;
+	}));
 }

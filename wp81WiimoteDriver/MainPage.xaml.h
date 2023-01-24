@@ -19,6 +19,7 @@ namespace wp81WiimoteDriver
 
 	protected:
 		virtual void OnNavigatedTo(Windows::UI::Xaml::Navigation::NavigationEventArgs^ e) override;
+		void UIConsoleAddText(Platform::String ^ text);
 	private:
 		void AppBarButton_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e);
 		void Install();
