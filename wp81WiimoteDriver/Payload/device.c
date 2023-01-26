@@ -202,11 +202,13 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 	WDF_REQUEST_SEND_OPTIONS_INIT(&SendOptions, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS | WDF_REQUEST_SEND_OPTION_TIMEOUT);
 	WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&SendOptions, SYNCHRONOUS_CALL_TIMEOUT);
 
+	debug("* Before WdfRequestSend\n");
 	WdfRequestSend(
 		Request,
 		DeviceContext->IoTarget,
 		&SendOptions
 		);
+	debug("* After WdfRequestSend\n");
 	
 	Status = WdfRequestGetStatus(Request);
 

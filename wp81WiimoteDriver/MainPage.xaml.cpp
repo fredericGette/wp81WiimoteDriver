@@ -295,7 +295,7 @@ void wp81WiimoteDriver::MainPage::Read()
 				debug(L"Device call succeeded!\n");
 				debug(L"returned %d\n", returned);
 				debug(L"[0x%02X 0x%02X 0x%02X 0x%02X]\n", ((BYTE *)OutputBuffer)[0], ((BYTE *)OutputBuffer)[1], ((BYTE *)OutputBuffer)[2], ((BYTE *)OutputBuffer)[3]);
-				UIConsoleAddText(L"succeeded!\n");
+				UIConsoleAddText(L"+");
 			}
 			else
 			{
