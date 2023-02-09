@@ -70,7 +70,12 @@
 // https://resources.oreilly.com/examples/9780735618039/-/tree/master/9780735618039_files/Samples			
 // 
 // Local  address: 78:92:3E:C7:7B:53 (132569513818963)
-// Device address: E0:E7:51:33:32:60 (247284104376928)
+// Black Device address: E0:E7:51:33:32:60 (247284104376928)
+// White Device address: 00:19:FD:D6:1C:84 (111632850052)
+//
+// BTHENUM#{0000110c-0000-1000-8000-00805f9b34fb}_LOCALMFG&0000#6&23f92770&0&000000000000_00000000#{0000110c-0000-1000-8000-00805f9b34fb}
+//
+// Bluetooth class {e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
 
 #include <ntifs.h>
 #include <wdf.h>
@@ -110,6 +115,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
         &DriverConfig,
         &driver
         );
+
+	debug("Driver registryPath= %S\n", RegistryPath->Buffer);
 
 	debug("End DriverEntry\n");
     return status;

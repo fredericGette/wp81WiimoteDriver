@@ -755,7 +755,7 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
 		debug("WdfDeviceConfigureRequestDispatching failed with Status code %d\n", status);
         goto exit;
 	}
-
+	
 exit:    
     //
     // We don't need to worry about deleting any objects on failure

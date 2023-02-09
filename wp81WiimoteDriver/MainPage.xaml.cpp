@@ -60,6 +60,56 @@ void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 {
 	(void) e;	// Unused parameter
 
+	TextTest->Text = "Checking test-signed drivers...";
+
+	HKEY HKEY_LOCAL_MACHINE = (HKEY)0x80000002;
+	DWORD retCode;
+
+	HKEY controlKey = {};
+	retCode = win32Api.RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control", 0, KEY_ALL_ACCESS, &controlKey);
+	if (retCode != ERROR_SUCCESS)
+	{
+		debug(L"Error RegOpenKeyExW : %d\n", retCode);
+		return;
+	}
+
+	WCHAR ValueName[16383]; // buffer for value name
+	DWORD ValueType;
+	PBYTE ValueData = new BYTE[32767];
+
+	DWORD i = 0;
+	do 
+	{
+		DWORD ValueNameSize = 16383;
+		DWORD ValueDataSize = 32767;
+		retCode = win32Api.RegEnumValueW(controlKey, i,
+			ValueName,
+			&ValueNameSize,
+			NULL,
+			&ValueType,
+			ValueData,
+			&ValueDataSize);
+
+		debug(L"retCode %d Value name: %s\n", retCode, ValueName);
+
+		if (wcscmp(L"SystemStartOptions", ValueName) == 0)
+		{
+			debug(L"Value: %s\n", ValueData);
+			if (wcsstr((WCHAR*)ValueData, L"TESTSIGNING"))
+			{
+				debug(L"OK\n");
+				TextTest->Text += L"OK\n";
+			}
+			else
+			{
+				TextTest->Text += L"Failed\n";
+				TextTest->Text += L"Please enable test-signed drivers to load!!\n";
+			}
+		}
+
+		i++;
+	} 
+	while (retCode == ERROR_SUCCESS);
 }
 
 void wp81WiimoteDriver::MainPage::AppBarButton_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e)
@@ -81,7 +131,7 @@ void wp81WiimoteDriver::MainPage::AppBarButton_Click(Platform::Object^ sender, W
 
 void wp81WiimoteDriver::MainPage::Install()
 {
-	TextTest->Text = L"Create driver WP81Wiimote in registry... ";
+	TextTest->Text += L"Create driver WP81Wiimote in registry... ";
 
 	HKEY HKEY_LOCAL_MACHINE = (HKEY)0x80000002;
 	DWORD retCode;
