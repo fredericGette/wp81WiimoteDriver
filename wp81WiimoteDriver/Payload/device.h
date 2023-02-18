@@ -32,6 +32,11 @@ typedef struct _WIIMOTE_CONTEXT
 	
 	L2CAP_CHANNEL_HANDLE ControlChannelHandle;
 	L2CAP_CHANNEL_HANDLE InterruptChannelHandle;
+	
+	//
+    // Queue for handling requests that come from the rawPdo
+    //
+    WDFQUEUE rawPdoQueue;
 
 } WIIMOTE_CONTEXT, *PWIIMOTE_CONTEXT;
 
@@ -59,3 +64,25 @@ typedef struct _BRB_L2CA_ACL_TRANSFER * PBRB_L2CA_ACL_TRANSFER;
 #define WIIMOTE_LEDS_THREE (0x40)
 #define WIIMOTE_LEDS_FOUR (0x80)
 #define WIIMOTE_LEDS_ALL (WIIMOTE_LEDS_FOUR | WIIMOTE_LEDS_THREE | WIIMOTE_LEDS_TWO | WIIMOTE_LEDS_ONE)
+
+
+#define  WIIMOTERAWPDO_DEVICE_ID L"{9cb351aa-8523-4f88-8567-f3a60d285ca0}\\WiimoteRawPdo\0"
+//#define  KBFILTR_DEVICE_ID L"{A65C87F9-BE02-4ed9-92EC-012D416169FA}\\KeyboardFilter\0"
+#define MAX_ID_LEN 128
+
+//{e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
+DEFINE_GUID(GUID_DEVCLASS_BLUETOOTH, 0xE0CBF06C, 0xCD8B, 0x4647, 0xBB, 0x8A, 0x26, 0x3B, 0x43, 0xF0, 0xF9, 0x74);
+
+typedef struct _RPDO_DEVICE_DATA
+{
+
+    //
+    // Queue of the parent device we will forward requests to
+    //
+    WDFQUEUE ParentQueue;
+
+} RPDO_DEVICE_DATA, *PRPDO_DEVICE_DATA;
+
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RPDO_DEVICE_DATA, PdoGetData);
+
+#define SYMBOLIC_NAME_STRING      L"\\DosDevices\\WiimoteRawPdo"

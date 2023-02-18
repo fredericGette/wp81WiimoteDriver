@@ -129,12 +129,31 @@ void wp81WiimoteDriver::MainPage::AppBarButton_Click(Platform::Object^ sender, W
 	}
 }
 
+DWORD appendMultiSz(WCHAR* src, WCHAR* dst)
+{
+	DWORD size = 0;
+	WCHAR* s = src;
+	WCHAR* d = dst;
+	do
+	{
+		*d = *s;
+		s++;
+		d++;
+		size++;
+	} while (*s != L'\0');
+	*d = L'\0';
+	size++;
+	return size;
+}
+
 void wp81WiimoteDriver::MainPage::Install()
 {
 	TextTest->Text += L"Create driver WP81Wiimote in registry... ";
 
 	HKEY HKEY_LOCAL_MACHINE = (HKEY)0x80000002;
 	DWORD retCode;
+
+	// Configure wiiimote driver
 
 	HKEY servicesKey = {};
 	retCode = win32Api.RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services", 0, KEY_ALL_ACCESS, &servicesKey);
@@ -158,7 +177,7 @@ void wp81WiimoteDriver::MainPage::Install()
 
 	ZeroMemory(ValueData, 256);
 	wcscpy_s((WCHAR*)ValueData, 128, L"WP81 Wiimote driver");
-	retCode = win32Api.RegSetValueExW(wp81driverKey, L"Description", NULL, REG_SZ, ValueData, 256);
+	retCode = win32Api.RegSetValueExW(wp81driverKey, L"Description", NULL, REG_SZ, ValueData, (wcslen((WCHAR*)ValueData)+1)*sizeof(WCHAR));
 	if (retCode != ERROR_SUCCESS)
 	{
 		debug(L"Error RegSetValueExW 'Description': %d\n", retCode);
@@ -168,7 +187,7 @@ void wp81WiimoteDriver::MainPage::Install()
 
 	ZeroMemory(ValueData, 256);
 	wcscpy_s((WCHAR*)ValueData, 128, L"Wp81Wiimote");
-	retCode = win32Api.RegSetValueExW(wp81driverKey, L"DisplayName", NULL, REG_SZ, ValueData, 256);
+	retCode = win32Api.RegSetValueExW(wp81driverKey, L"DisplayName", NULL, REG_SZ, ValueData, (wcslen((WCHAR*)ValueData) + 1) * sizeof(WCHAR));
 	if (retCode != ERROR_SUCCESS)
 	{
 		debug(L"Error RegSetValueExW 'DisplayName': %d\n", retCode);
@@ -185,7 +204,6 @@ void wp81WiimoteDriver::MainPage::Install()
 		return;
 	}
 
-	//*(PDWORD)ValueData = 1; // System: Loaded by I/O subsystem. Specifies that the driver is loaded at kernel initialization.
 	*(PDWORD)ValueData = 3; // SERVICE_DEMAND_START (started by the PlugAndPlay Manager)
 	retCode = win32Api.RegSetValueExW(wp81driverKey, L"Start", NULL, REG_DWORD, ValueData, 4);
 	if (retCode != ERROR_SUCCESS)
@@ -220,8 +238,15 @@ void wp81WiimoteDriver::MainPage::Install()
 		return;
 	}
 
+	// Set wiimotedriver as upper filter of BTHENUM
+
+	WCHAR *newValueData = (WCHAR*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 5000);
+	DWORD newValueDataSize = 0;
+	newValueDataSize += appendMultiSz(L"wp81wiimote", newValueData);
+	newValueDataSize++; // add final \0
+
 	HKEY pdoKey = {};
-	retCode = win32Api.RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"System\\CurrentControlSet\\Enum\\BTHENUM\\Dev_E0E751333260\\6&23f92770&0&BluetoothDevice_E0E751333260", 0, KEY_ALL_ACCESS, &pdoKey);
+	retCode = win32Api.RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"System\\CurrentControlSet\\Enum\\BTH\\MS_BTHBRB\\5&2215169c&0&0", 0, KEY_ALL_ACCESS, &pdoKey);
 	if (retCode != ERROR_SUCCESS)
 	{
 		debug(L"Error RegOpenKeyExW : %d\n", retCode);
@@ -229,12 +254,10 @@ void wp81WiimoteDriver::MainPage::Install()
 		return;
 	}
 
-	ZeroMemory(ValueData, 256);
-	wcscpy_s((WCHAR*)ValueData, 128, L"wp81wiimote");
-	retCode = win32Api.RegSetValueExW(pdoKey, L"Service", NULL, REG_SZ, ValueData, 256);
+	retCode = win32Api.RegSetValueExW(pdoKey, L"UpperFilters", NULL, REG_MULTI_SZ, (BYTE*)newValueData, newValueDataSize * 2);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegSetValueExW 'Service': %d\n", retCode);
+		debug(L"Error RegSetValueExW 'UpperFilters': %d\n", retCode);
 		TextTest->Text += L"Failed\n";
 		return;
 	}
@@ -280,24 +303,11 @@ void wp81WiimoteDriver::MainPage::Install()
 
 void wp81WiimoteDriver::MainPage::Run()
 {
-	// Get handle of the first local bluetooth radio
-	BLUETOOTH_FIND_RADIO_PARAMS radio_params;
-	ZeroMemory(&radio_params, sizeof(radio_params));
-	radio_params.dwSize = sizeof(BLUETOOTH_FIND_RADIO_PARAMS);
-	HANDLE radio_handle;
-	HBLUETOOTH_RADIO_FIND radio_search_result = win32Api.BluetoothFindFirstRadio(&radio_params, &radio_handle);
-	if (radio_search_result == NULL)
-	{
-		debug(L"Error BluetoothFindFirstRadio: %d (259=ERROR_NO_MORE_ITEMS)\n", GetLastError());
-		throw "Please check that Bluetooth is on.";
-	}
-	debug(L"radio_search_result=0x%08X radio_handle=0x%08X\n", radio_search_result, radio_handle);
-
 
 	TextTest->Text += L"Calling device...";
 	create_task([this]()
 	{
-		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\BTHENUM#Dev_E0E751333260#6&23f92770&0&BluetoothDevice_E0E751333260#{4d1e55b2-f16f-11cf-88cb-001111000030}", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WiimoteRawPdo", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 		if (hDevice == INVALID_HANDLE_VALUE)
 		{
 			debug(L"Failed to open device.");
@@ -328,7 +338,7 @@ void wp81WiimoteDriver::MainPage::Read()
 	TextTest->Text += L"Reading device...";
 	create_task([this]()
 	{
-		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\BTHENUM#Dev_E0E751333260#6&23f92770&0&BluetoothDevice_E0E751333260#{4d1e55b2-f16f-11cf-88cb-001111000030}", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WiimoteRawPdo", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 		if (hDevice == INVALID_HANDLE_VALUE)
 		{
 			debug(L"Failed to open device.");

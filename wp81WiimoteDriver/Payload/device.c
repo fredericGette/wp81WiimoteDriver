@@ -609,17 +609,25 @@ void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferL
 {
 	UNREFERENCED_PARAMETER(OutputBufferLength);
 	UNREFERENCED_PARAMETER(InputBufferLength);
-	WDFDEVICE  Device;
+	WDFDEVICE  device;
 	
 	debug("Begin EvtIoDeviceControl\n");
 	
-	Device = WdfIoQueueGetDevice(Queue);
-	PWIIMOTE_CONTEXT devCtx = GetDeviceContext(Device);
+	device = WdfIoQueueGetDevice(Queue);
+	
+	PWIIMOTE_CONTEXT devCtx = GetDeviceContext(device);
 	
 	debug("IOCTL_HID_GET_COLLECTION_INFORMATION=%08X\n",0x000b01a8);
 	debug("IOCTL_WIIMOTE_CONNECT=%08X\n",IOCTL_WIIMOTE_CONNECT);
 	debug("IOCTL_WIIMOTE_READ=%08X\n",IOCTL_WIIMOTE_READ);
 	debug("IoControlCode=%08X\n",IoControlCode);
+	
+	debug("device=%08X\n",device);
+	debug("devCtx=%08X\n",devCtx);
+	debug("devCtx->Device=%08X\n",devCtx->Device);
+	debug("devCtx->IoTarget=%08X\n",devCtx->IoTarget);
+	debug("devCtx->ProfileDrvInterface=%08X\n",devCtx->ProfileDrvInterface);
+	
 	if (IoControlCode ==  IOCTL_WIIMOTE_CONNECT)
 	{
 		ConnectWiimote(devCtx);
@@ -663,24 +671,349 @@ exit:
 	debug("End EvtIoDeviceControl\n");
 }
 
+VOID EvtIoDeviceControlForRawPdo(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferLength, size_t InputBufferLength, ULONG IoControlCode)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+    WDFDEVICE parent = WdfIoQueueGetDevice(Queue);
+    PRPDO_DEVICE_DATA pdoData;
+    WDF_REQUEST_FORWARD_OPTIONS forwardOptions;
+	
+	debug("Begin EvtIoDeviceControlForRawPdo\n");
+        
+    pdoData = PdoGetData(parent);
+
+    UNREFERENCED_PARAMETER(OutputBufferLength);
+    UNREFERENCED_PARAMETER(InputBufferLength);
+
+	debug("IoControlCode=%08X\n",IoControlCode);
+    //
+    // Process the ioctl and complete it when you are done.
+    // Since the queue is configured for serial dispatch, you will
+    // not receive another ioctl request until you complete this one.
+    //
+    switch (IoControlCode) {
+    case IOCTL_WIIMOTE_CONNECT:
+	case IOCTL_WIIMOTE_READ:
+        WDF_REQUEST_FORWARD_OPTIONS_INIT(&forwardOptions);
+        status = WdfRequestForwardToParentDeviceIoQueue(Request, pdoData->ParentQueue, &forwardOptions);
+        if (!NT_SUCCESS(status)) {
+            WdfRequestComplete(Request, status);
+        }
+        break;
+    default:
+        WdfRequestComplete(Request, status);
+        break;
+    }
+
+	debug("End EvtIoDeviceControlForRawPdo\n");
+
+    return;
+}
+
+NTSTATUS PrepareHardware( WDFDEVICE Device, WDFCMRESLIST ResourcesRaw, WDFCMRESLIST ResourcesTranslated)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	UNREFERENCED_PARAMETER(Device);
+	UNREFERENCED_PARAMETER(ResourcesRaw);
+	UNREFERENCED_PARAMETER(ResourcesTranslated);
+	
+	debug("PrepareHardware\n");
+	
+	return status;
+}
+
+NTSTATUS DeviceD0Entry( WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	DECLARE_CONST_UNICODE_STRING(symbolicLinkName, SYMBOLIC_NAME_STRING) ;
+	
+	//UNREFERENCED_PARAMETER(Device);
+	UNREFERENCED_PARAMETER(PreviousState);
+	
+	debug("DeviceD0Entry\n");
+	
+	//
+	// Create a symbolic link for the control object so that usermode can open
+	// the device.
+	//
+	debug("WdfDeviceCreateSymbolicLink\n");
+	status = WdfDeviceCreateSymbolicLink(Device, &symbolicLinkName);
+	if (!NT_SUCCESS(status)) {
+		debug("Failed WdfDeviceCreateSymbolicLink %x\n", status);
+	}
+	
+	return status;	
+}
+
+NTSTATUS DeviceD0Exit( WDFDEVICE Device, WDF_POWER_DEVICE_STATE TargetState)
+{
+	NTSTATUS status = STATUS_SUCCESS;
+	UNREFERENCED_PARAMETER(Device);
+	UNREFERENCED_PARAMETER(TargetState);
+	
+	debug("DeviceD0Exit\n");	
+
+	return status;	
+}
+
+NTSTATUS ReleaseHardware( WDFDEVICE Device, WDFCMRESLIST ResourcesTranslated)
+{ 
+	NTSTATUS status = STATUS_SUCCESS;
+	UNREFERENCED_PARAMETER(Device);
+	UNREFERENCED_PARAMETER(ResourcesTranslated);
+	
+	debug("ReleaseHardware\n");
+	
+	return status;	
+}
+
+NTSTATUS CreateRawPdo(WDFDEVICE Device)
+{
+	NTSTATUS                    status;
+    PWDFDEVICE_INIT             pDeviceInit = NULL;
+    PRPDO_DEVICE_DATA           pdoData = NULL;
+    WDFDEVICE                   hChild = NULL;
+    WDF_OBJECT_ATTRIBUTES       pdoAttributes;
+    WDF_DEVICE_PNP_CAPABILITIES pnpCaps;
+    WDF_IO_QUEUE_CONFIG         ioQueueConfig;
+    WDFQUEUE                    queue;
+    WDF_DEVICE_STATE            deviceState;
+    PWIIMOTE_CONTEXT            devExt;
+	ULONG InstanceNo = 1; // We need only one PDO.
+    DECLARE_CONST_UNICODE_STRING(deviceId,WIIMOTERAWPDO_DEVICE_ID );
+    DECLARE_CONST_UNICODE_STRING(hardwareId,WIIMOTERAWPDO_DEVICE_ID );
+    DECLARE_CONST_UNICODE_STRING(deviceLocation,L"Wiimote raw PDO\0" );
+    DECLARE_UNICODE_STRING_SIZE(buffer, MAX_ID_LEN);
+	WDF_PNPPOWER_EVENT_CALLBACKS PnpPowerCallbacks;
+
+    debug("Begin CreateRawPdo\n");
+
+    //
+    // Allocate a WDFDEVICE_INIT structure and set the properties
+    // so that we can create a device object for the child.
+    //
+    pDeviceInit = WdfPdoInitAllocate(Device);
+
+    if (pDeviceInit == NULL) {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        goto Cleanup;
+    }
+
+    //
+    // Mark the device RAW so that the child device can be started
+    // and accessed without requiring a function driver. Since we are
+    // creating a RAW PDO, we must provide a class guid.
+    //
+    status = WdfPdoInitAssignRawDevice(pDeviceInit, &GUID_DEVCLASS_BLUETOOTH);
+    if (!NT_SUCCESS(status)) {
+        goto Cleanup;
+    }
+
+    //
+    // Assign DeviceID - This will be reported to IRP_MN_QUERY_ID/BusQueryDeviceID
+    //
+    status = WdfPdoInitAssignDeviceID(pDeviceInit, &deviceId);
+    if (!NT_SUCCESS(status)) {
+        goto Cleanup;
+    }
+
+    //
+    // We could be enumerating more than one children if the filter attaches
+    // to multiple instances, so we must provide a
+    // BusQueryInstanceID. If we don't, system will throw CA bugcheck.
+    //
+    status =  RtlUnicodeStringPrintf(&buffer, L"%02d", InstanceNo);
+    if (!NT_SUCCESS(status)) {
+        goto Cleanup;
+    }
+
+    status = WdfPdoInitAssignInstanceID(pDeviceInit, &buffer);
+    if (!NT_SUCCESS(status)) {
+        goto Cleanup;
+    }
+
+    //
+    // Provide a description about the device. This text is usually read from
+    // the device. In the case of USB device, this text comes from the string
+    // descriptor. This text is displayed momentarily by the PnP manager while
+    // it's looking for a matching INF. If it finds one, it uses the Device
+    // Description from the INF file to display in the device manager.
+    // Since our device is raw device and we don't provide any hardware ID
+    // to match with an INF, this text will be displayed in the device manager.
+    //
+    status = RtlUnicodeStringPrintf(&buffer,L"Wiimote_raw_PDO_%02d", InstanceNo );
+    if (!NT_SUCCESS(status)) {
+        goto Cleanup;
+    }
+
+    //
+    // You can call WdfPdoInitAddDeviceText multiple times, adding device
+    // text for multiple locales. When the system displays the text, it
+    // chooses the text that matches the current locale, if available.
+    // Otherwise it will use the string for the default locale.
+    // The driver can specify the driver's default locale by calling
+    // WdfPdoInitSetDefaultLocale.
+    //
+    status = WdfPdoInitAddDeviceText(pDeviceInit,
+                                        &buffer,
+                                        &deviceLocation,
+                                        0x409 // en-US
+                                        );
+    if (!NT_SUCCESS(status)) {
+        goto Cleanup;
+    }
+
+    WdfPdoInitSetDefaultLocale(pDeviceInit, 0x409);
+    
+    //
+    // Initialize the attributes to specify the size of PDO device extension.
+    // All the state information private to the PDO will be tracked here.
+    //
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&pdoAttributes, RPDO_DEVICE_DATA);
+
+    //
+    // Set up our queue to allow forwarding of requests to the parent
+    // This is done so that the cached Wiimote Attributes can be retrieved
+    //
+    WdfPdoInitAllowForwardingRequestToParent(pDeviceInit);
+
+
+	// Configure PnP Functions
+	WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&PnpPowerCallbacks);
+	PnpPowerCallbacks.EvtDevicePrepareHardware = PrepareHardware;
+	PnpPowerCallbacks.EvtDeviceReleaseHardware = ReleaseHardware;
+	PnpPowerCallbacks.EvtDeviceD0Entry = DeviceD0Entry;
+	PnpPowerCallbacks.EvtDeviceD0Exit = DeviceD0Exit;
+	WdfDeviceInitSetPnpPowerEventCallbacks(pDeviceInit, &PnpPowerCallbacks);
+
+    status = WdfDeviceCreate(&pDeviceInit, &pdoAttributes, &hChild);
+    if (!NT_SUCCESS(status)) {
+        goto Cleanup;
+    }
+
+    //
+    // Get the device context.
+    //
+    pdoData = PdoGetData(hChild);
+
+    //
+    // Get the parent queue we will be forwarding to
+    //
+    devExt = GetDeviceContext(Device);
+    pdoData->ParentQueue = devExt->rawPdoQueue;
+
+    //
+    // Configure the default queue associated with the control device object
+    // to be Serial so that request passed to EvtIoDeviceControl are serialized.
+    // A default queue gets all the requests that are not
+    // configure-fowarded using WdfDeviceConfigureRequestDispatching.
+    //
+
+    WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&ioQueueConfig,
+                                    WdfIoQueueDispatchSequential);
+
+    ioQueueConfig.EvtIoDeviceControl = EvtIoDeviceControlForRawPdo;
+
+    status = WdfIoQueueCreate(hChild,
+                                        &ioQueueConfig,
+                                        WDF_NO_OBJECT_ATTRIBUTES,
+                                        &queue // pointer to default queue
+                                        );
+    if (!NT_SUCCESS(status)) {
+        debug("WdfIoQueueCreate failed 0x%x\n", status);
+        goto Cleanup;
+    }
+
+    //
+    // Set some properties for the child device.
+    //
+    WDF_DEVICE_PNP_CAPABILITIES_INIT(&pnpCaps);
+
+    pnpCaps.Removable         = WdfTrue;
+    pnpCaps.SurpriseRemovalOK = WdfTrue;
+    pnpCaps.NoDisplayInUI     = WdfTrue;
+
+    pnpCaps.Address  = InstanceNo;
+    pnpCaps.UINumber = InstanceNo;
+
+    WdfDeviceSetPnpCapabilities(hChild, &pnpCaps);
+
+    //
+    // TODO: In addition to setting NoDisplayInUI in DeviceCaps, we
+    // have to do the following to hide the device. Following call
+    // tells the framework to report the device state in
+    // IRP_MN_QUERY_DEVICE_STATE request.
+    //
+    WDF_DEVICE_STATE_INIT(&deviceState);
+    deviceState.DontDisplayInUI = WdfTrue;
+    WdfDeviceSetDeviceState(hChild, &deviceState);
+
+    //
+    // Add this device to the FDO's collection of children.
+    // After the child device is added to the static collection successfully,
+    // driver must call WdfPdoMarkMissing to get the device deleted. It
+    // shouldn't delete the child device directly by calling WdfObjectDelete.
+    //
+    status = WdfFdoAddStaticChild(Device, hChild);
+    if (!NT_SUCCESS(status)) {
+        goto Cleanup;
+    }
+
+	debug("End CreateRawPdo\n");
+
+    //
+    // pDeviceInit will be freed by WDF.
+    //
+    return STATUS_SUCCESS;
+
+Cleanup:
+
+    debug("CreateRawPdo failed %x\n", status);
+
+    //
+    // Call WdfDeviceInitFree if you encounter an error while initializing
+    // a new framework device object. If you call WdfDeviceInitFree,
+    // do not call WdfDeviceCreate.
+    //
+    if (pDeviceInit != NULL) {
+        WdfDeviceInitFree(pDeviceInit);
+    }
+
+    if(hChild) {
+        WdfObjectDelete(hChild);
+    }
+
+    return status;
+}
+
 NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
 {
     UNREFERENCED_PARAMETER(Driver);
 	NTSTATUS                        status;
     WDFDEVICE                       device;    
     WDF_OBJECT_ATTRIBUTES           deviceAttributes;
-	WDF_IO_QUEUE_CONFIG 			QueueConfig;
-	WDFQUEUE                    	queue;
-	WDFSTRING 						string;
-	UNICODE_STRING 					unicodeString;
+	WDF_IO_QUEUE_CONFIG     ioQueueConfig;
+	WDFQUEUE                hQueue;
     
 	debug("Begin EvtDriverDeviceAdd\n");
+
+    //
+    // Tell the framework that you are filter driver. Framework
+    // takes care of inherting all the device flags & characterstics
+    // from the lower device you are attaching to.
+    //
+    WdfFdoInitSetFilter(DeviceInit);
 
     //
     // Set device attributes
     //
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, WIIMOTE_CONTEXT);
  
+	//
+    // Create a framework device object.  This call will in turn create
+    // a WDM deviceobject, attach to the lower stack and set the
+    // appropriate flags and attributes.
+    //
     status = WdfDeviceCreate(
         &DeviceInit,
         &deviceAttributes,
@@ -708,54 +1041,44 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
     {
         debug("WdfFdoQueryForInterface failed, Status code %d\n", status);  
 		goto exit;		
+    }	
+	
+	debug("device=%08X\n",device);
+	debug("devCtx=%08X\n",devCtx);
+	debug("devCtx->Device=%08X\n",devCtx->Device);
+	debug("devCtx->IoTarget=%08X\n",devCtx->IoTarget);
+	debug("devCtx->ProfileDrvInterface=%08X\n",devCtx->ProfileDrvInterface);
+	
+    //
+    // Create a new queue to handle IOCTLs that will be forwarded to us from
+    // the rawPDO. 
+    //
+    WDF_IO_QUEUE_CONFIG_INIT(&ioQueueConfig, WdfIoQueueDispatchSequential);
+
+    //
+    // Framework by default creates non-power managed queues for
+    // filter drivers.
+    //
+    ioQueueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
+
+    status = WdfIoQueueCreate(device,
+                            &ioQueueConfig,
+                            WDF_NO_OBJECT_ATTRIBUTES,
+                            &hQueue
+                            );
+    if (!NT_SUCCESS(status)) {
+        debug("WdfIoQueueCreate failed 0x%x\n", status);
+        goto exit;
     }
-	
-	
-    // Create an interface so that usermode can open the device.
-    
-	debug("WdfDeviceCreateDeviceInterface\n");
-	status = WdfDeviceCreateDeviceInterface(device, (LPGUID) &GUID_DEVINTERFACE_HID, NULL);
-	if(!NT_SUCCESS(status))
-	{
-		debug("WdfDeviceCreateDeviceInterface failed with Status code %d\n", status);
-        goto exit;
-	}
-	
-	debug("WdfStringCreate\n");
-	status = WdfStringCreate(NULL, WDF_NO_OBJECT_ATTRIBUTES, &string);
-	if (NT_SUCCESS(status)) {
-		debug("WdfDeviceRetrieveDeviceInterfaceString\n");
-		status = WdfDeviceRetrieveDeviceInterfaceString(device, &GUID_DEVINTERFACE_HID, NULL, string);
-		if (!NT_SUCCESS(status)) {
-			debug("WdfDeviceRetrieveDeviceInterfaceString failed with Status code %d\n", status);
-			goto exit;
-		}
-	}
-	
-	debug("WdfStringGetUnicodeString\n");
-	WdfStringGetUnicodeString(string, &unicodeString);
-	debug("DeviceInterfaceString : %wZ\n", &unicodeString);
-	
-	// Create Queue for IOCTL
-	WDF_IO_QUEUE_CONFIG_INIT(&QueueConfig, WdfIoQueueDispatchSequential);
-	QueueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
-	
-	debug("WdfIoQueueCreate\n");
-	status = WdfIoQueueCreate(device, &QueueConfig, WDF_NO_OBJECT_ATTRIBUTES, &queue);
-	if(!NT_SUCCESS(status))
-	{
-		debug("WdfIoQueueCreate failed with Status code %d\n", status);
-        goto exit;
-	}
-	
-	debug("WdfDeviceConfigureRequestDispatching\n");
-	status = WdfDeviceConfigureRequestDispatching(device, queue, WdfRequestTypeDeviceControl);
-	if(!NT_SUCCESS(status))
-	{
-		debug("WdfDeviceConfigureRequestDispatching failed with Status code %d\n", status);
-        goto exit;
-	}
-	
+
+	devCtx->rawPdoQueue = hQueue;
+
+    //
+    // Create a RAW pdo so we can provide a sideband communication with
+    // the application.
+    //
+    status = CreateRawPdo(device);
+			
 exit:    
     //
     // We don't need to worry about deleting any objects on failure
