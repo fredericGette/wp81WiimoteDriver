@@ -7,8 +7,9 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Margin="0,0.333,0,471.667" Height="105">
         <TextBlock x:Name="TextTest" HorizontalAlignment="Left" TextWrapping="Wrap" FontSize="18"/>
+        <Button x:Name="Left" Background="MediumSlateBlue" Foreground="White" Margin="0,101,0,-53">LEFT</Button>
     </Grid>
 
     <Page.BottomAppBar>

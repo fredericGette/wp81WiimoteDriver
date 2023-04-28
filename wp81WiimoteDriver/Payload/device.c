@@ -352,7 +352,7 @@ NTSTATUS SetLEDs(PWIIMOTE_CONTEXT DeviceContext, BYTE LEDFlag)
 	}
 
 	// Fill Buffer	
-	Data[0] = 0xA2;	//HID Output Report
+	Data[0] = 0xA2;	//HID Output Report; WR_SET_REPORT|BT_OUTPUT
 	Data[1] = 0x11;	//Player LED
 	Data[2] = LEDFlag;
 
@@ -401,9 +401,43 @@ exit:
 	return Status;
 }
 
+NTSTATUS RequestStatus(PWIIMOTE_CONTEXT DeviceContext)
+{
+	CONST size_t BufferSize = 3;
+	NTSTATUS Status = STATUS_SUCCESS;
+	WDFREQUEST Request;
+	WDFMEMORY Memory;
+	BYTE * Data;
+
+	debug("Begin RequestStatus\n");
+
+	// Get Resources
+	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Device, DeviceContext->IoTarget, BufferSize, &Request, &Memory, (PVOID *)&Data); 
+	if(!NT_SUCCESS(Status))
+	{
+		goto exit;
+	}
+
+	// Fill Buffer	
+	Data[0] = 0xA2;	//HID Output Report
+	Data[1] = 0x15;	//Status Information Request
+	Data[2] = 0x00;	//Rumble Off
+
+	Status = BluetoothTransferToDevice(DeviceContext, Request, Memory, TRUE);
+	if(!NT_SUCCESS(Status))
+	{
+		goto exit;
+	}
+
+exit:
+	debug("End RequestStatus\n");
+	return Status;
+}
+
+
 NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 {
-	CONST size_t ReadBufferSize = 50;
+	CONST size_t ReadBufferSize = 8;
 	NTSTATUS Status = STATUS_SUCCESS;
 	WDFREQUEST Request;
 	WDFMEMORY Memory;
@@ -441,14 +475,16 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 	Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRB);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("SendBRB Failed 0x%08X", Status);
+		debug("SendBRB Failed 0x%08X\n", Status);
+		WdfObjectDelete(Request);		
+		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRB);
 		goto exit;
 	}	
 	PVOID ReadBuffer2 = BRB->Buffer;
 	size_t ReadBufferSize2 = BRB->BufferSize;
+	size_t RemainingBufferSize = BRB->RemainingBufferSize;
 
-	debug("RawBuffer: %I64X\n", (UINT64 * )ReadBuffer2);
-	debug("BufferSize: %d - RemainingBufferSize: %d\n", BRB->BufferSize, BRB->RemainingBufferSize);
+	debug("BufferSize: %d - RemainingBufferSize: %d\n", ReadBufferSize2, RemainingBufferSize);
 	
 	if(ReadBufferSize2 >= 2)
 	{
@@ -461,8 +497,18 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 		((BYTE *)Buffer)[2] = ((BYTE *)ReadBuffer2)[2];
 		((BYTE *)Buffer)[3] = ((BYTE *)ReadBuffer2)[3];
 	}
+	
+	WdfObjectDelete(Request);		
+	DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRB);
+	
+	if (RemainingBufferSize <= 8)
+	{
+		// Avoid empty buffer
+		RequestStatus(DeviceContext);
+	}
 
 exit:
+
 	debug("End ReadButtons\n");
 	return Status;
 }
@@ -475,7 +521,7 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	
 	debug("Begin ConnectWiimote\n");
 	
-	/////////// control pipe ///////////
+	/////////// control pipe (command channel) ///////////
 	
 	//Create BRB
 	BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, POOLTAG_WIIMOTE);
@@ -501,7 +547,7 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	BRBOpenChannel->ConfigOut.NumExtraOptions = 0;
 	BRBOpenChannel->ConfigOut.LinkTO = 0;
 
-    BRBOpenChannel->IncomingQueueDepth = 50;
+    BRBOpenChannel->IncomingQueueDepth = 0;
     BRBOpenChannel->ReferenceObject = (PVOID) WdfDeviceWdmGetDeviceObject(DeviceContext->Device);
    
 	Status = CreateRequest(DeviceContext->Device, DeviceContext->IoTarget, &Request);
@@ -532,7 +578,7 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	WdfObjectDelete(Request);		
 	DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBOpenChannel);
 
-	/////////// data pipe ///////////
+	/////////// data pipe (interrupt channel) ///////////
 
 	//Create BRB
 	BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, POOLTAG_WIIMOTE);
@@ -558,7 +604,7 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	BRBOpenChannel->ConfigOut.NumExtraOptions = 0;
 	BRBOpenChannel->ConfigOut.LinkTO = 0;
 
-    BRBOpenChannel->IncomingQueueDepth = 50;
+    BRBOpenChannel->IncomingQueueDepth = 0;
     BRBOpenChannel->ReferenceObject = (PVOID) WdfDeviceWdmGetDeviceObject(DeviceContext->Device);
    
 	BRBOpenChannel->CallbackFlags = CALLBACK_DISCONNECT;                                                   
@@ -597,7 +643,6 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	debug("WiimoteStart\n");
 	SetLEDs(DeviceContext, WIIMOTE_LEDS_ONE);
 	SetReportMode(DeviceContext, 0x30);
-
 	
 exit:
 	debug("End ConnectWiimote\n");
@@ -653,12 +698,11 @@ void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferL
             goto exit;
         }
 		
-		
-		ReadButtons(devCtx, Buffer);
+		status = ReadButtons(devCtx, Buffer);
 		bytesReturned = 4;
 		WdfRequestCompleteWithInformation(
                                       Request,
-                                      STATUS_SUCCESS,
+                                      status,
                                       bytesReturned
                                       );
 	}
@@ -717,6 +761,7 @@ NTSTATUS PrepareHardware( WDFDEVICE Device, WDFCMRESLIST ResourcesRaw, WDFCMRESL
 	UNREFERENCED_PARAMETER(ResourcesRaw);
 	UNREFERENCED_PARAMETER(ResourcesTranslated);
 	
+	
 	debug("PrepareHardware\n");
 	
 	return status;
@@ -727,7 +772,6 @@ NTSTATUS DeviceD0Entry( WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
 	NTSTATUS status = STATUS_SUCCESS;
 	DECLARE_CONST_UNICODE_STRING(symbolicLinkName, SYMBOLIC_NAME_STRING) ;
 	
-	//UNREFERENCED_PARAMETER(Device);
 	UNREFERENCED_PARAMETER(PreviousState);
 	
 	debug("DeviceD0Entry\n");

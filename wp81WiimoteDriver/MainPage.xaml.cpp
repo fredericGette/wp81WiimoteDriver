@@ -238,7 +238,7 @@ void wp81WiimoteDriver::MainPage::Install()
 		return;
 	}
 
-	// Set wiimotedriver as upper filter of BTHENUM
+	// Set wiimote driver as an upper filter of BTHENUM
 
 	WCHAR *newValueData = (WCHAR*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 5000);
 	DWORD newValueDataSize = 0;
@@ -246,6 +246,9 @@ void wp81WiimoteDriver::MainPage::Install()
 	newValueDataSize++; // add final \0
 
 	HKEY pdoKey = {};
+	// lumia 735 
+	// retCode = win32Api.RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"System\\CurrentControlSet\\Enum\\BTH\\MS_BTHBRB\\5&36dde44&0&0", 0, KEY_ALL_ACCESS, &pdoKey);
+	// lumia 520
 	retCode = win32Api.RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"System\\CurrentControlSet\\Enum\\BTH\\MS_BTHBRB\\5&2215169c&0&0", 0, KEY_ALL_ACCESS, &pdoKey);
 	if (retCode != ERROR_SUCCESS)
 	{
@@ -355,12 +358,19 @@ void wp81WiimoteDriver::MainPage::Read()
 				debug(L"Device call succeeded!\n");
 				debug(L"returned %d\n", returned);
 				debug(L"[0x%02X 0x%02X 0x%02X 0x%02X]\n", ((BYTE *)OutputBuffer)[0], ((BYTE *)OutputBuffer)[1], ((BYTE *)OutputBuffer)[2], ((BYTE *)OutputBuffer)[3]);
-				UIConsoleAddText(L"+");
+				if (((BYTE *)OutputBuffer)[3] != 0)
+				{
+					UIButton(true);
+				}
+				else
+				{
+					UIButton(false);
+				}
 			}
 			else
 			{
 				debug(L"Device call failed!\n");
-				UIConsoleAddText("failed!\n");
+				UIConsoleAddText(L"-");
 			}
 		}
 
@@ -374,5 +384,22 @@ void MainPage::UIConsoleAddText(Platform::String ^ text) {
 		ref new DispatchedHandler([this, text]()
 	{
 		TextTest->Text += text;
+	}));
+}
+
+void MainPage::UIButton(boolean flag) {
+	Dispatcher->RunAsync(
+		CoreDispatcherPriority::Normal,
+		ref new DispatchedHandler([this, flag]()
+	{
+		if (flag)
+		{
+			Left->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			Left->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+		
 	}));
 }
