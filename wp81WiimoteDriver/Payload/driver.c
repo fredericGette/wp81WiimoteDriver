@@ -7,21 +7,7 @@
 //
 // link.exe  /VERSION:"6.3" /INCREMENTAL:NO /LIBPATH:"C:\Program Files (x86)\Windows Phone Kits\8.1\lib\win8\km\ARM" /WX "C:\Program Files (x86)\Windows Kits\8.1\lib\winv6.3\UM\ARM\armrt.lib" "C:\Program Files (x86)\Windows Kits\8.1\lib\win8\KM\arm\BufferOverflowFastFailK.lib" "C:\Program Files (x86)\Windows Kits\8.1\lib\win8\KM\arm\ntoskrnl.lib" "C:\Program Files (x86)\Windows Kits\8.1\lib\win8\KM\arm\hal.lib" "C:\Program Files (x86)\Windows Kits\8.1\lib\win8\KM\arm\wmilib.lib" "C:\Program Files (x86)\Windows Kits\8.1\lib\wdf\kmdf\arm\1.11\WdfLdr.lib" "C:\Program Files (x86)\Windows Kits\8.1\lib\wdf\kmdf\arm\1.11\WdfDriverEntry.lib" /NODEFAULTLIB /NODEFAULTLIB:oldnames.lib /MANIFEST:NO /DEBUG /SUBSYSTEM:NATIVE,"6.02" /STACK:"0x40000","0x2000" /Driver /OPT:REF /OPT:ICF /ENTRY:"FxDriverEntry" /RELEASE  /MERGE:"_TEXT=.text;_PAGE=PAGE" /MACHINE:ARM /PROFILE /kernel /IGNORE:4078,4221,4198 /osversion:6.3 /pdbcompress /debugtype:pdata driver.obj
 //
-// del ahcache.sys
-// ren driver.sys ahcache.sys
 //
-// "C:\Program Files (x86)\Windows Kits\8.1\bin\x86\signtool.exe" sign /ph /fd "sha256" /sha1 "38DD26500D3D48F0E8C6F73F58C5F08BE77F4B7D" ahcache.sys
-//
-// Bluetooth profile driver
-// IoAttachDeviceToDeviceStack
-// WdfFdoInitSetFilter
-// You don't need to query for any interfaces to use
-// IOCTL_INTERNAL_BTH_SUBMIT_BRB. What l2cap functions do you want to
-// test? Any particular protocols or just l2cap? You cannot arbitrarily
-// send l2cap connect requests to bthport, you have to do it through an
-// enumerated PDO which would be enumerated for a specific remote device's
-// protocol.
-// https://github.com/Microsoft/Windows-driver-samples/tree/main/setup/devcon
 // HKLM\System\CurrentControlSet\Enum\BTHENUM\Dev_E0E751333260\6&23f92770&0&BluetoothDevice_E0E751333260
 													// {
 															// "name": "UpperFilters",
@@ -76,6 +62,47 @@
 // BTHENUM#{0000110c-0000-1000-8000-00805f9b34fb}_LOCALMFG&0000#6&23f92770&0&000000000000_00000000#{0000110c-0000-1000-8000-00805f9b34fb}
 //
 // Bluetooth class {e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
+//
+// wp81wiimote (upper filter)
+//   |
+// BthEnum
+//   |
+// BthPort
+//   |
+// BthUSB
+//
+//
+// bthl2cap (upper filter)
+//   |
+// bthci
+//
+// HKEY_CURRENT_USER\SYSTEM\ControlSet001\Enum\SystemBusQc\SMD_BT\4&315a27b&0&4097\LocationInformation=Serial HCI Bus - Bluetooth Function
+// HKEY_CURRENT_USER\SYSTEM\ControlSet001\Enum\SystemBusQc\SMD_BT\4&315a27b&0&4097\Device Parameters\Disconnect Timeout=30000
+// HKEY_CURRENT_USER\SYSTEM\ControlSet001\Enum\SystemBusQc\SMD_BT\4&315a27b&0&4097\Device Parameters\SymbolicLinkName=\??\SystemBusQc#SMD_BT#4&315a27b&0&4097#{0850302a-b344-4fda-9be9-90576b8d46f0}\0003
+// HKEY_CURRENT_USER\SYSTEM\ControlSet001\Services\BtConnMgr\BthPortDeviceParameters\Disconnect Timeout=30000
+//
+// https://www.lisha.ufsc.br/teaching/shi/ine5346-2003-1/work/bluetooth/hci_commands.html
+// 
+// {"GUID" : "8a1f9517-3a8c-4a9e-a018-4f17a200f277", "Name" : "Microsoft-Windows-BTH-BTHPORT"}
+// 17 95 1f 8a 8c 3a 9e 4a a0 18 4f 17 a2 00 f2 77
+//
+// {"GUID" : "ee6150ef-c97e-46dd-b635-4c047599fc0f", "Name" : "Microsoft-WindowsPhone-Bluetooth-CMCL"}
+// {"GUID" : "A9B5617D-6C0E-4adc-B076-F3B0CDD4D0ED", "Name" : "Microsoft-WindowsPhone-Bluetooth-CM"}
+// 7d 61 b5 a9 0e 6c-dc 4a b0 76 f3 b0 cd d4 d0 ed
+//
+// SYSTEM\\ControlSet001\\Services\\BTConnMgr\\Parameters
+//		DebugConsoleEnabled 0/1
+//		DebugSevLevel 0/1/2/3
+//
+// Device_UpdateWaitPaired
+// 10023a9e 20 46           mov param_1,r4
+// 10023aa0 ff f7 fa f9     bl Device_SetTimer
+//
+// HKEY_CURRENT_USER\SYSTEM\ControlSet001\Enum\SystemBusQc\SMD_BT\4&315a27b&0&4097
+// HKEY_CURRENT_USER\SYSTEM\ControlSet001\Enum\SystemBusQc\SMD_BT\4&315a27b&0&4097\Device Parameters, SymbolicLinkName, \??\SystemBusQc#SMD_BT#4&315a27b&0&4097#{0850302a-b344-4fda-9be9-90576b8d46f0}
+//
+// https://stackoverflow.com/questions/2643084/sysinternals-winobj-device-listing-mechanism
+
 
 #include <ntifs.h>
 #include <wdf.h>
@@ -117,6 +144,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
         );
 
 	debug("Driver registryPath= %S\n", RegistryPath->Buffer);
+	debug("DriverName= %S\n", DriverObject->DriverName.Buffer);
+	debug("HardwareDatabase= %S\n", DriverObject->HardwareDatabase->Buffer);
 
 	debug("End DriverEntry\n");
     return status;

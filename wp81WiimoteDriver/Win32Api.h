@@ -107,6 +107,20 @@ typedef struct _BLUETOOTH_FIND_RADIO_PARAMS {
 
 typedef HANDLE      HBLUETOOTH_RADIO_FIND;
 
+typedef _Return_type_success_(return == 0) DWORD        RETURN_TYPE;
+typedef RETURN_TYPE  CONFIGRET;
+
+typedef _Null_terminated_ WCHAR *DEVNODEID_W, *DEVINSTID_W;
+
+//
+// Flags for CM_Get_Device_Interface_List, CM_Get_Device_Interface_List_Size
+//
+#define CM_GET_DEVICE_INTERFACE_LIST_PRESENT     (0x00000000)  // only currently 'live' device interfaces
+#define CM_GET_DEVICE_INTERFACE_LIST_ALL_DEVICES (0x00000001)  // all registered device interfaces, live or not
+#define CM_GET_DEVICE_INTERFACE_LIST_BITS        (0x00000001)
+
+#define CR_SUCCESS                  (0x00000000)
+
 extern "C" {
 	WINBASEAPI HMODULE WINAPI LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
 	WINBASEAPI HMODULE WINAPI GetModuleHandleW(LPCWSTR lpModuleName);
@@ -130,6 +144,8 @@ extern "C" {
 	WINBASEAPI BOOL WINAPI CloseHandle(HANDLE hObject);
 
 	WINBASEAPI BOOL WINAPI DeviceIoControl(HANDLE hDevice, DWORD dwIoControlCode, LPVOID lpInBuffer, DWORD nInBufferSize, LPVOID lpOutBuffer, DWORD nOutBufferSize, LPDWORD lpBytesReturned, LPOVERLAPPED lpOverlapped);
+	WINBASEAPI BOOL WINAPI EnumDeviceDrivers(LPVOID *lpImageBase, DWORD cb, LPDWORD lpcbNeeded);
+	WINBASEAPI DWORD WINAPI GetDeviceDriverBaseNameW(LPVOID ImageBase, LPWSTR lpBaseName, DWORD nSize);
 
 	WINBASEAPI BOOL	WINAPI CopyFileW(LPCWSTR lpExistingFileName, LPCWSTR lpNewFileName, BOOL bFailIfExists);
 
@@ -138,6 +154,10 @@ extern "C" {
 	WINADVAPI BOOL WINAPI CloseServiceHandle(SC_HANDLE hSCObject);
 
 	HBLUETOOTH_RADIO_FIND WINAPI BluetoothFindFirstRadio(const BLUETOOTH_FIND_RADIO_PARAMS * pbtfrp, HANDLE * phRadio);
+
+	CMAPI CONFIGRET	WINAPI CM_Get_Device_Interface_List_SizeW(PULONG pulLen,LPGUID InterfaceClassGuid, DEVINSTID_W pDeviceID, ULONG ulFlags);
+	CMAPI CONFIGRET WINAPI CM_Get_Device_Interface_ListW(LPGUID InterfaceClassGuid, DEVINSTID_W pDeviceID, PZZWSTR Buffer, ULONG BufferLen, ULONG ulFlags);
+
 }
 
 #define WIN32API_TOSTRING(x) #x
@@ -191,6 +211,8 @@ public:
 	WIN32API_DEFINE_PROC(CreateProcessA);
 	WIN32API_DEFINE_PROC(CloseHandle);
 	WIN32API_DEFINE_PROC(DeviceIoControl);
+	WIN32API_DEFINE_PROC(EnumDeviceDrivers);
+	WIN32API_DEFINE_PROC(GetDeviceDriverBaseNameW);
 	const HMODULE m_Kernel32legacy;
 	WIN32API_DEFINE_PROC(CopyFileW);
 	const HMODULE m_SecHost;
@@ -199,6 +221,9 @@ public:
 	WIN32API_DEFINE_PROC(CloseServiceHandle);
 	const HMODULE m_BluetoothApis;
 	WIN32API_DEFINE_PROC(BluetoothFindFirstRadio);
+	const HMODULE m_CfgMgr32;
+	WIN32API_DEFINE_PROC(CM_Get_Device_Interface_List_SizeW);
+	WIN32API_DEFINE_PROC(CM_Get_Device_Interface_ListW);
 
 	Win32Api()
 		: m_Kernelbase(GetKernelBase()),
@@ -220,6 +245,8 @@ public:
 		WIN32API_INIT_PROC(m_Kernelbase, CreateProcessA),
 		WIN32API_INIT_PROC(m_Kernelbase, CloseHandle),
 		WIN32API_INIT_PROC(m_Kernelbase, DeviceIoControl),
+		WIN32API_INIT_PROC(m_Kernelbase, EnumDeviceDrivers),
+		WIN32API_INIT_PROC(m_Kernelbase, GetDeviceDriverBaseNameW),
 		m_Kernel32legacy(GetModuleHandleW(L"KERNEL32LEGACY.DLL")),
 		WIN32API_INIT_PROC(m_Kernel32legacy, CopyFileW),
 		m_SecHost(GetModuleHandleW(L"SECHOST.DLL")),
@@ -227,7 +254,10 @@ public:
 		WIN32API_INIT_PROC(m_SecHost, CreateServiceW),
 		WIN32API_INIT_PROC(m_SecHost, CloseServiceHandle),
 		m_BluetoothApis(LoadLibraryExW(L"BLUETOOTHAPIS.DLL", NULL, NULL)),
-		WIN32API_INIT_PROC(m_BluetoothApis, BluetoothFindFirstRadio)
+		WIN32API_INIT_PROC(m_BluetoothApis, BluetoothFindFirstRadio),
+		m_CfgMgr32(LoadLibraryExW(L"CFGMGR32.DLL", NULL, NULL)),
+		WIN32API_INIT_PROC(m_CfgMgr32, CM_Get_Device_Interface_List_SizeW),
+		WIN32API_INIT_PROC(m_CfgMgr32, CM_Get_Device_Interface_ListW)
 	{};
 
 };

@@ -26,5 +26,9 @@ namespace wp81WiimoteDriver
 		void Install();
 		void Run();
 		void Read();
+		void CopyFiles(std::stack<Platform::String^> fileNames);
+		void RegisterDriver(Platform::String ^ driverName, Platform::String ^ driverDescription);
+		void AddUpperFilter(Platform::String ^ filterName, Platform::String ^ targetDriver);
+		void MainPage::CheckTestSignedDriver();
 	};
 }
