@@ -23,6 +23,9 @@
     <Image Include="Assets\WideLogo.scale-240.png">
       <Filter>Assets</Filter>
     </Image>
+    <Filter Include="Payload">
+      <UniqueIdentifier>{9904eff8-a74e-448d-87f4-27c729fa25d1}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml" />
@@ -31,12 +34,30 @@
     <ClCompile Include="App.xaml.cpp" />
     <ClCompile Include="MainPage.xaml.cpp" />
     <ClCompile Include="pch.cpp" />
+    <ClCompile Include="Payload\device.c">
+      <Filter>Payload</Filter>
+    </ClCompile>
+    <ClCompile Include="Payload\driver.c">
+      <Filter>Payload</Filter>
+    </ClCompile>
+    <ClCompile Include="Payload\filter.c">
+      <Filter>Payload</Filter>
+    </ClCompile>
+    <ClCompile Include="Payload\log.c">
+      <Filter>Payload</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="App.xaml.h" />
     <ClInclude Include="MainPage.xaml.h" />
     <ClInclude Include="Win32Api.h" />
+    <ClInclude Include="Payload\device.h">
+      <Filter>Payload</Filter>
+    </ClInclude>
+    <ClInclude Include="Payload\log.h">
+      <Filter>Payload</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest" />
