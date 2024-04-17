@@ -5,7 +5,7 @@ NTSTATUS CreateRequest(WDFDEVICE Device, WDFIOTARGET IoTarget, WDFREQUEST * Requ
 	NTSTATUS Status = STATUS_SUCCESS;
     WDF_OBJECT_ATTRIBUTES Attributes;
 
-	debug("Begin CreateRequest\n");
+	DbgPrint("WII!Begin CreateRequest");
 
     WDF_OBJECT_ATTRIBUTES_INIT(&Attributes);
     Attributes.ParentObject = Device;
@@ -13,12 +13,12 @@ NTSTATUS CreateRequest(WDFDEVICE Device, WDFIOTARGET IoTarget, WDFREQUEST * Requ
 	Status = WdfRequestCreate(&Attributes, IoTarget, Request);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("Failed WdfRequestCreate %d\n", Status);
+		DbgPrint("WII!Failed WdfRequestCreate 0x%x", Status);
 		goto exit;
 	}
 	
 exit:
-	debug("End CreateRequest\n");
+	DbgPrint("WII!End CreateRequest");
 	return Status;
 }
 
@@ -28,7 +28,7 @@ NTSTATUS PrepareRequest( WDFIOTARGET IoTarget, PBRB BRB, WDFREQUEST Request)
     WDF_OBJECT_ATTRIBUTES MemoryAttributes;
     WDFMEMORY Memory = NULL;
 
-	debug("Begin PrepareRequest\n");
+	DbgPrint("WII!Begin PrepareRequest");
 
     WDF_OBJECT_ATTRIBUTES_INIT(&MemoryAttributes);
     MemoryAttributes.ParentObject = Request;
@@ -63,7 +63,7 @@ NTSTATUS PrepareRequest( WDFIOTARGET IoTarget, PBRB BRB, WDFREQUEST Request)
 	}
 
 exit:
-	debug("End PrepareRequest\n");
+	DbgPrint("WII!End PrepareRequest");
 	return Status;
 }
 
@@ -72,7 +72,7 @@ NTSTATUS CreateBuffer( WDFREQUEST Request, SIZE_T BufferSize, WDFMEMORY * Memory
 	NTSTATUS Status = STATUS_SUCCESS;
     WDF_OBJECT_ATTRIBUTES Attributes;
 	
-	debug("Begin CreateBuffer\n");
+	DbgPrint("WII!Begin CreateBuffer");
 
 	WDF_OBJECT_ATTRIBUTES_INIT(&Attributes);
 	Attributes.ParentObject = Request;
@@ -84,7 +84,7 @@ NTSTATUS CreateBuffer( WDFREQUEST Request, SIZE_T BufferSize, WDFMEMORY * Memory
 	}
 
 exit:
-	debug("End CreateBuffer\n");
+	DbgPrint("WII!End CreateBuffer");
 	return Status;
 }
 
@@ -92,7 +92,7 @@ NTSTATUS BluetoothCreateRequestAndBuffer(WDFDEVICE Device, WDFIOTARGET IoTarget,
 {
 	NTSTATUS Status = STATUS_SUCCESS;
 	
-	debug("Begin BluetoothCreateRequestAndBuffer\n");
+	DbgPrint("WII!Begin BluetoothCreateRequestAndBuffer");
 
 	Status = CreateRequest(Device, IoTarget, Request);
 	if(!NT_SUCCESS(Status))
@@ -109,7 +109,7 @@ NTSTATUS BluetoothCreateRequestAndBuffer(WDFDEVICE Device, WDFIOTARGET IoTarget,
 	}
 	
 exit:	
-	debug("End BluetoothCreateRequestAndBuffer\n");
+	DbgPrint("WII!End BluetoothCreateRequestAndBuffer");
 	return Status;
 }
 
@@ -118,7 +118,7 @@ NTSTATUS SendBRB(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptRequest, PBRB BRB
 	NTSTATUS Status = STATUS_SUCCESS;
 	WDFREQUEST Request;
 
-	debug("Begin SendBRB\n");
+	DbgPrint("WII!Begin SendBRB");
 
 	if(OptRequest == NULL)
 	{
@@ -158,7 +158,7 @@ NTSTATUS SendBRB(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptRequest, PBRB BRB
 	}
 
 exit:
-	debug("End SendBRB\n");
+	DbgPrint("WII!End SendBRB");
 	return Status;
 }
 
@@ -168,7 +168,7 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 	WDF_REQUEST_SEND_OPTIONS SendOptions;
 	WDFREQUEST Request;
 
-	debug("Begin SendBRBSynchronous\n");
+	DbgPrint("WII!Begin SendBRBSynchronous");
 
 	if(OptRequest == NULL)
 	{
@@ -186,7 +186,7 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 	Status = PrepareRequest(DeviceContext->IoTarget, BRB, Request);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("PrepareRequest failed : 0x%08X\n", Status);
+		DbgPrint("WII!PrepareRequest failed : 0x%x", Status);
 		WdfObjectDelete(Request);
 		goto exit;
 	}
@@ -194,7 +194,7 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 	Status = WdfRequestAllocateTimer(Request);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("WdfRequestAllocateTimer failed : 0x%08X\n", Status);
+		DbgPrint("WII!WdfRequestAllocateTimer failed : 0x%x", Status);
 		WdfObjectDelete(Request);
 		goto exit;
 	}
@@ -202,25 +202,23 @@ NTSTATUS SendBRBSynchronous(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST OptReques
 	WDF_REQUEST_SEND_OPTIONS_INIT(&SendOptions, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS | WDF_REQUEST_SEND_OPTION_TIMEOUT);
 	WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&SendOptions, SYNCHRONOUS_CALL_TIMEOUT);
 
-	debug("* Before WdfRequestSend\n");
 	WdfRequestSend(
 		Request,
 		DeviceContext->IoTarget,
 		&SendOptions
 		);
-	debug("* After WdfRequestSend\n");
 	
 	Status = WdfRequestGetStatus(Request);
 
 	if(!NT_SUCCESS(Status))
 	{
-		debug("WdfRequestGetStatus failed : 0x%08X (0xC000009D=STATUS_DEVICE_NOT_CONNECTED)\n", Status);
+		DbgPrint("WII!WdfRequestGetStatus failed : 0x%x (0xC000009D=STATUS_DEVICE_NOT_CONNECTED)", Status);
 		WdfObjectDelete(Request);
 		goto exit;
 	}
 
 exit:
-	debug("End SendBRBSynchronous\n");
+	DbgPrint("WII!End SendBRBSynchronous");
 	return Status;
 }
 
@@ -229,7 +227,7 @@ VOID CleanUpCompletedRequest( WDFREQUEST Request,  WDFIOTARGET IoTarget,  WDFCON
 	PWIIMOTE_CONTEXT DeviceContext;
 	PBRB UsedBRB;
 
-	debug("Begin CleanUpCompletedRequest\n");
+	DbgPrint("WII!Begin CleanUpCompletedRequest");
 
 	DeviceContext = GetDeviceContext(WdfIoTargetGetDevice(IoTarget));
 	UsedBRB = (PBRB)Context;
@@ -237,29 +235,29 @@ VOID CleanUpCompletedRequest( WDFREQUEST Request,  WDFIOTARGET IoTarget,  WDFCON
 	WdfObjectDelete(Request);
 	DeviceContext->ProfileDrvInterface.BthFreeBrb(UsedBRB);
 	
-	debug("End CleanUpCompletedRequest\n");
+	DbgPrint("WII!End CleanUpCompletedRequest");
 }
 
 VOID TransferToDeviceCompletion(WDFREQUEST Request, WDFIOTARGET IoTarget,PWDF_REQUEST_COMPLETION_PARAMS Params, WDFCONTEXT Context)
 {
 	UNREFERENCED_PARAMETER(Params);
-	debug("Begin TransferToDeviceCompletion\n");
+	DbgPrint("WII!Begin TransferToDeviceCompletion");
 
 	CleanUpCompletedRequest(Request, IoTarget, Context);
-	debug("End TransferToDeviceCompletion\n");
+	DbgPrint("WII!End TransferToDeviceCompletion");
 }
 
-NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Request, WDFMEMORY Memory, BOOLEAN Synchronous)
+NTSTATUS BluetoothTransferToDeviceInterrupt(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Request, WDFMEMORY Memory, BOOLEAN Synchronous)
 {
 	NTSTATUS Status = STATUS_SUCCESS;
 	PBRB_L2CA_ACL_TRANSFER BRBTransfer;
 	size_t BufferSize;
 	
-	debug("Begin BluetoothTransferToDevice\n");
+	DbgPrint("WII!Begin BluetoothTransferToDeviceInterrupt");
 	
 	if(DeviceContext->InterruptChannelHandle == NULL)
 	{
-		debug("InterruptChannelHandle is null.\n");
+		DbgPrint("WII!InterruptChannelHandle is null.");
 		Status = STATUS_INVALID_HANDLE;
 		goto exit;
 	}
@@ -268,12 +266,12 @@ NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Re
 	BRBTransfer = (PBRB_L2CA_ACL_TRANSFER)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, POOLTAG_WIIMOTE);
 	if (BRBTransfer == NULL)
 	{
-		debug("BthAllocateBrb failed\n");
+		DbgPrint("WII!BthAllocateBrb failed");
 		Status = STATUS_INSUFFICIENT_RESOURCES;
 		goto exit;
 	}
 
-	BRBTransfer->BtAddress = 247284104376928;
+	BRBTransfer->BtAddress = DeviceContext->BtAddress;
 	BRBTransfer->ChannelHandle = DeviceContext->InterruptChannelHandle;
 	BRBTransfer->TransferFlags = ACL_TRANSFER_DIRECTION_OUT;
 	BRBTransfer->BufferMDL = NULL;
@@ -288,7 +286,7 @@ NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Re
 		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBTransfer);
 		if(!NT_SUCCESS(Status))
 		{
-			debug("BthFreeBrb failed : 0x%08X\n", Status);
+			DbgPrint("WII!BthFreeBrb failed : 0x%x", Status);
 			goto exit;
 		}
 	}
@@ -303,21 +301,21 @@ NTSTATUS BluetoothTransferToDevice(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Re
 	}
 
 exit:
-	debug("End BluetoothTransferToDevice\n");
+	DbgPrint("WII!End BluetoothTransferToDeviceInterrupt");
 	return Status;
 }
 
-NTSTATUS BluetoothTransferToDevice2(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Request, WDFMEMORY Memory, BOOLEAN Synchronous)
+NTSTATUS BluetoothTransferToDeviceControl(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST Request, WDFMEMORY Memory, BOOLEAN Synchronous)
 {
 	NTSTATUS Status = STATUS_SUCCESS;
 	PBRB_L2CA_ACL_TRANSFER BRBTransfer;
 	size_t BufferSize;
 	
-	debug("Begin BluetoothTransferToDevice2\n");
+	DbgPrint("WII!Begin BluetoothTransferToDeviceControl");
 	
 	if(DeviceContext->InterruptChannelHandle == NULL)
 	{
-		debug("InterruptChannelHandle is null.\n");
+		DbgPrint("WII!InterruptChannelHandle is null");
 		Status = STATUS_INVALID_HANDLE;
 		goto exit;
 	}
@@ -326,12 +324,12 @@ NTSTATUS BluetoothTransferToDevice2(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST R
 	BRBTransfer = (PBRB_L2CA_ACL_TRANSFER)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, POOLTAG_WIIMOTE);
 	if (BRBTransfer == NULL)
 	{
-		debug("BthAllocateBrb failed\n");
+		DbgPrint("WII!BthAllocateBrb failed");
 		Status = STATUS_INSUFFICIENT_RESOURCES;
 		goto exit;
 	}
 
-	BRBTransfer->BtAddress = 247284104376928;
+	BRBTransfer->BtAddress = DeviceContext->BtAddress;
 	BRBTransfer->ChannelHandle = DeviceContext->ControlChannelHandle;
 	BRBTransfer->TransferFlags = ACL_TRANSFER_DIRECTION_OUT;
 	BRBTransfer->BufferMDL = NULL;
@@ -346,7 +344,7 @@ NTSTATUS BluetoothTransferToDevice2(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST R
 		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBTransfer);
 		if(!NT_SUCCESS(Status))
 		{
-			debug("BthFreeBrb failed : 0x%08X\n", Status);
+			DbgPrint("WII!BthFreeBrb failed : 0x%x", Status);
 			goto exit;
 		}
 	}
@@ -361,7 +359,7 @@ NTSTATUS BluetoothTransferToDevice2(PWIIMOTE_CONTEXT DeviceContext, WDFREQUEST R
 	}
 
 exit:
-	debug("End BluetoothTransferToDevice2\n");
+	DbgPrint("WII!End BluetoothTransferToDeviceControl");
 	return Status;
 }
 
@@ -374,7 +372,7 @@ NTSTATUS SetLEDs(PWIIMOTE_CONTEXT DeviceContext, BYTE LEDFlag)
 	WDFMEMORY Memory;
 	BYTE * Data;
 
-	debug("Begin SetLEDs\n");
+	DbgPrint("WII!Begin SetLEDs");
 	
 	// Get Resources
 	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Device, DeviceContext->IoTarget, BufferSize, &Request, &Memory, (PVOID *)&Data); 
@@ -388,47 +386,14 @@ NTSTATUS SetLEDs(PWIIMOTE_CONTEXT DeviceContext, BYTE LEDFlag)
 	Data[1] = 0x11;	//Player LED
 	Data[2] = LEDFlag;
 
-	Status = BluetoothTransferToDevice(DeviceContext, Request, Memory, TRUE);
+	Status = BluetoothTransferToDeviceInterrupt(DeviceContext, Request, Memory, TRUE);
 	if(!NT_SUCCESS(Status))
 	{
 		goto exit;
 	}
 
 exit:
-	debug("End SetLEDs\n");
-	return Status;
-}
-
-NTSTATUS SetLEDs2(PWIIMOTE_CONTEXT DeviceContext, BYTE LEDFlag)
-{
-	CONST size_t BufferSize = 3;
-	NTSTATUS Status = STATUS_SUCCESS;
-	WDFREQUEST Request;
-	WDFMEMORY Memory;
-	BYTE * Data;
-
-	debug("Begin SetLEDs2\n");
-	
-	// Get Resources
-	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Device, DeviceContext->IoTarget, BufferSize, &Request, &Memory, (PVOID *)&Data); 
-	if(!NT_SUCCESS(Status))
-	{
-		goto exit;
-	}
-
-	// Fill Buffer	
-	Data[0] = 0x52;	//HID Output Report; WR_SET_REPORT|BT_OUTPUT
-	Data[1] = 0x11;	//Player LED
-	Data[2] = LEDFlag;
-
-	Status = BluetoothTransferToDevice2(DeviceContext, Request, Memory, TRUE);
-	if(!NT_SUCCESS(Status))
-	{
-		goto exit;
-	}
-
-exit:
-	debug("End SetLEDs2\n");
+	DbgPrint("WII!End SetLEDs");
 	return Status;
 }
 
@@ -440,7 +405,7 @@ NTSTATUS SetReportMode(PWIIMOTE_CONTEXT DeviceContext, BYTE ReportMode)
 	WDFMEMORY Memory;
 	BYTE * Data;
 
-	debug("Begin SetReportMode\n");
+	DbgPrint("WII!Begin SetReportMode");
 
 	// Get Resources
 	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Device, DeviceContext->IoTarget, BufferSize, &Request, &Memory, (PVOID *)&Data); 
@@ -455,50 +420,16 @@ NTSTATUS SetReportMode(PWIIMOTE_CONTEXT DeviceContext, BYTE ReportMode)
 	Data[2] = 0x00;	//Only On Change
 	Data[3] = ReportMode; //Mode
 
-	Status = BluetoothTransferToDevice(DeviceContext, Request, Memory, TRUE);
+	Status = BluetoothTransferToDeviceInterrupt(DeviceContext, Request, Memory, TRUE);
 	if(!NT_SUCCESS(Status))
 	{
 		goto exit;
 	}
 
 exit:
-	debug("End SetReportMode\n");
+	DbgPrint("WII!End SetReportMode");
 	return Status;
 }
-
-NTSTATUS RequestStatus(PWIIMOTE_CONTEXT DeviceContext)
-{
-	CONST size_t BufferSize = 3;
-	NTSTATUS Status = STATUS_SUCCESS;
-	WDFREQUEST Request;
-	WDFMEMORY Memory;
-	BYTE * Data;
-
-	debug("Begin RequestStatus\n");
-
-	// Get Resources
-	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Device, DeviceContext->IoTarget, BufferSize, &Request, &Memory, (PVOID *)&Data); 
-	if(!NT_SUCCESS(Status))
-	{
-		goto exit;
-	}
-
-	// Fill Buffer	
-	Data[0] = 0x52;	//HID Output Report
-	Data[1] = 0x15;	//Status Information Request
-	Data[2] = 0x00;	//Rumble Off
-
-	Status = BluetoothTransferToDevice2(DeviceContext, Request, Memory, TRUE);
-	if(!NT_SUCCESS(Status))
-	{
-		goto exit;
-	}
-
-exit:
-	debug("End RequestStatus\n");
-	return Status;
-}
-
 
 NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 {
@@ -509,13 +440,13 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 	PBRB_L2CA_ACL_TRANSFER BRB;
 	PVOID ReadBuffer = NULL;
 
-	debug("Begin ReadButtons\n");
+	DbgPrint("WII!Begin ReadButtons");
 
 	//Create Report And Buffer
 	Status = BluetoothCreateRequestAndBuffer(DeviceContext->Device, DeviceContext->IoTarget, ReadBufferSize, &Request, &Memory, &ReadBuffer);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("CreateRequestAndBuffer Failed 0x%08X", Status);
+		DbgPrint("WII!CreateRequestAndBuffer Failed 0x%x", Status);
 		goto exit;
 	}
 
@@ -523,14 +454,14 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 	BRB = (PBRB_L2CA_ACL_TRANSFER)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_ACL_TRANSFER, POOLTAG_WIIMOTE);
 	if (BRB == NULL)
 	{
-		debug("BthAllocateBrb STATUS_INSUFFICIENT_RESOURCES\n");
+		DbgPrint("WII!BthAllocateBrb STATUS_INSUFFICIENT_RESOURCES");
 		WdfObjectDelete(Request);
 		Status = STATUS_INSUFFICIENT_RESOURCES;
 		goto exit;
 	}
 
 	// Read
-	BRB->BtAddress = 247284104376928;
+	BRB->BtAddress = DeviceContext->BtAddress;
 	BRB->ChannelHandle = DeviceContext->InterruptChannelHandle;
 	BRB->TransferFlags = ACL_TRANSFER_DIRECTION_IN | ACL_SHORT_TRANSFER_OK;
 	BRB->BufferMDL = NULL;
@@ -540,7 +471,7 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 	Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRB);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("SendBRB Failed 0x%08X\n", Status);
+		DbgPrint("WII!SendBRB Failed 0x%x", Status);
 		WdfObjectDelete(Request);		
 		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRB);
 		goto exit;
@@ -549,14 +480,14 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 	size_t ReadBufferSize2 = BRB->BufferSize;
 	size_t RemainingBufferSize = BRB->RemainingBufferSize;
 
-	debug("BufferSize: %d - RemainingBufferSize: %d\n", ReadBufferSize2, RemainingBufferSize);
+	DbgPrint("WII!BufferSize: %d - RemainingBufferSize: %d", ReadBufferSize2, RemainingBufferSize);
 	
 	if(ReadBufferSize2 >= 2)
 	{
-		debug("ReadBuffer[0]: 0x%02X input(wiimote->phone)=0xA1 output(phone->wiimote)=0xA2\n", ((BYTE *)ReadBuffer2)[0]);
-		debug("ReadBuffer[1]: 0x%02X (ReportID)\n", ((BYTE *)ReadBuffer2)[1]);
-		debug("ReadBuffer[2]: 0x%02X\n", ((BYTE *)ReadBuffer2)[2]);
-		debug("ReadBuffer[3]: 0x%02X\n", ((BYTE *)ReadBuffer2)[3]);
+		DbgPrint("WII!ReadBuffer[0]: 0x%02X input(wiimote->phone)=0xA1 output(phone->wiimote)=0xA2", ((BYTE *)ReadBuffer2)[0]);
+		DbgPrint("WII!ReadBuffer[1]: 0x%02X (ReportID)", ((BYTE *)ReadBuffer2)[1]);
+		DbgPrint("WII!ReadBuffer[2]: 0x%02X", ((BYTE *)ReadBuffer2)[2]);
+		DbgPrint("WII!ReadBuffer[3]: 0x%02X", ((BYTE *)ReadBuffer2)[3]);
 		((BYTE *)Buffer)[0] = ((BYTE *)ReadBuffer2)[0];
 		((BYTE *)Buffer)[1] = ((BYTE *)ReadBuffer2)[1];
 		((BYTE *)Buffer)[2] = ((BYTE *)ReadBuffer2)[2];
@@ -565,79 +496,73 @@ NTSTATUS ReadButtons(PWIIMOTE_CONTEXT DeviceContext, PVOID Buffer)
 	
 	WdfObjectDelete(Request);		
 	DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRB);
-	
-	if (RemainingBufferSize <= 8)
-	{
-		// Avoid empty buffer
-		RequestStatus(DeviceContext);
-	}
 
 exit:
 
-	debug("End ReadButtons\n");
+	DbgPrint("WII!End ReadButtons");
 	return Status;
 }
 
 VOID L2CAPCallback11(PVOID Context, INDICATION_CODE Indication, PINDICATION_PARAMETERS Parameters)
 {
-	debug("Begin L2CAPCallback11\n");
+	DbgPrint("WII!Begin L2CAPCallback11");
 	
 	PWIIMOTE_CONTEXT DeviceContext = (PWIIMOTE_CONTEXT)Context;
 
 	UNREFERENCED_PARAMETER(Parameters);
 	
-	debug("L2CAP Channel 0x11 Callback\n");
-	debug("Indication: %u\n", Indication);	
+	DbgPrint("WII!L2CAP Channel 0x11 Callback");
+	DbgPrint("WII!Indication: %u\n", Indication);
 
 	if(Indication == IndicationAddReference)
 	{		
-		debug("Add Reference\n");
+		DbgPrint("WII!Add Reference");
 	}
 	else if(Indication == IndicationRemoteDisconnect)
 	{
 		//Wiimote has disconnected.
 		
-		debug("Disconnect\n");
-		debug("Reason=%u (0=HciDisconnect); CloseNow=%u\n", Parameters->Parameters.Disconnect.Reason, Parameters->Parameters.Disconnect.CloseNow);
+		DbgPrint("WII!Disconnect");
+		DbgPrint("WII!Reason=%u (0=HciDisconnect); CloseNow=%u", Parameters->Parameters.Disconnect.Reason, Parameters->Parameters.Disconnect.CloseNow);
 	}
 	else if (Indication == IndicationRecvPacket)
 	{
-		debug("Recveived Packet\n");
-		debug("PacketLength=%u; TotalQueueLength=%u\n", Parameters->Parameters.RecvPacket.PacketLength, Parameters->Parameters.RecvPacket.TotalQueueLength);
+		DbgPrint("WII!Received Packet");
+		DbgPrint("WII!PacketLength=%u; TotalQueueLength=%u", Parameters->Parameters.RecvPacket.PacketLength, Parameters->Parameters.RecvPacket.TotalQueueLength);
 	}
 	
-	debug("End L2CAPCallback11\n");
+	DbgPrint("WII!End L2CAPCallback11");
 }
 
 VOID L2CAPCallback13(PVOID Context, INDICATION_CODE Indication, PINDICATION_PARAMETERS Parameters)
 {
-	debug("Begin L2CAPCallback13\n");
+	DbgPrint("WII!Begin L2CAPCallback13");
 	
 	PWIIMOTE_CONTEXT DeviceContext = (PWIIMOTE_CONTEXT)Context;
 
 	UNREFERENCED_PARAMETER(Parameters);
 	
-	debug("L2CAP Channel 0x13 Callback\n");
-	debug("Indication: %u\n", Indication);	
+	DbgPrint("WII!L2CAP Channel 0x13 Callback");
+	DbgPrint("WII!Indication: %u", Indication);
 
 	if(Indication == IndicationAddReference)
 	{		
-		debug("Add Reference\n");
+		DbgPrint("WII!Add Reference");
 	}
 	else if(Indication == IndicationRemoteDisconnect)
 	{
 		//Wiimote has disconnected.
 		
-		debug("Disconnect\n");
-		debug("Reason=%u (0=HciDisconnect); CloseNow=%u\n", Parameters->Parameters.Disconnect.Reason, Parameters->Parameters.Disconnect.CloseNow);
+		DbgPrint("WII!Disconnect");
+		DbgPrint("WII!Reason=%u (0=HciDisconnect); CloseNow=%u", Parameters->Parameters.Disconnect.Reason, Parameters->Parameters.Disconnect.CloseNow);
 	}
 	else if (Indication == IndicationRecvPacket)
 	{
-		debug("Recveived Packet\n");
-		debug("PacketLength=%u; TotalQueueLength=%u\n", Parameters->Parameters.RecvPacket.PacketLength, Parameters->Parameters.RecvPacket.TotalQueueLength);
+		DbgPrint("WII!Received Packet");
+		DbgPrint("WII!PacketLength=%u; TotalQueueLength=%u", Parameters->Parameters.RecvPacket.PacketLength, Parameters->Parameters.RecvPacket.TotalQueueLength);
 	}
 	
-	debug("End L2CAPCallback13\n");
+	DbgPrint("WII!End L2CAPCallback13");
 }
 
 NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
@@ -646,8 +571,8 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	WDFREQUEST Request;
 	PBRB_L2CA_OPEN_CHANNEL BRBOpenChannel;
 	
-	debug("Begin ConnectWiimote\n");
-	debug("L2CAP_DEFAULT_MTU=%u; L2CAP_MIN_MTU=%u; L2CAP_DEFAULT_FLUSHTO=%u L2CAP_MIN_FLUSHTO=%u\n", L2CAP_DEFAULT_MTU, L2CAP_MIN_MTU, L2CAP_DEFAULT_FLUSHTO, L2CAP_MIN_FLUSHTO);
+	DbgPrint("WII!Begin ConnectWiimote");
+	DbgPrint("WII!L2CAP_DEFAULT_MTU=%u; L2CAP_MIN_MTU=%u; L2CAP_DEFAULT_FLUSHTO=%u L2CAP_MIN_FLUSHTO=%u", L2CAP_DEFAULT_MTU, L2CAP_MIN_MTU, L2CAP_DEFAULT_FLUSHTO, L2CAP_MIN_FLUSHTO);
 	
 	/////////// control pipe (command channel) ///////////
 	
@@ -655,13 +580,13 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, POOLTAG_WIIMOTE);
 	if (BRBOpenChannel == NULL)
 	{
-		debug("BthAllocateBrb Failed\n");
+		DbgPrint("WII!BthAllocateBrb Failed");
 		Status = STATUS_INSUFFICIENT_RESOURCES;
 		goto exit;
 	}
 	
 	//Fill BRB
-	BRBOpenChannel->BtAddress = 247284104376928;
+	BRBOpenChannel->BtAddress = DeviceContext->BtAddress;
 	BRBOpenChannel->Psm = 0x11;
 	BRBOpenChannel->ChannelFlags = 0;
 	BRBOpenChannel->ConfigOut.Flags = 0;
@@ -685,7 +610,7 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	Status = CreateRequest(DeviceContext->Device, DeviceContext->IoTarget, &Request);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("CreateRequest Failed 0x%08X\n", Status);
+		DbgPrint("WII!CreateRequest Failed 0x%x", Status);
 		goto exit;
 	}
    
@@ -693,12 +618,12 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRBOpenChannel);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("SendBRB Failed 0x%08X\n", Status);
-		debug("Control Channel Result %08X (C00000B5 = timeout; C00000D0=max connection reached)\n", Status);
+		DbgPrint("WII!SendBRB Failed 0x%x", Status);
+		DbgPrint("WII!Control Channel Result %08X (C00000B5 = timeout; C00000D0=max connection reached)", Status);
 		
 		if(Status == STATUS_IO_TIMEOUT)
 		{
-			debug("Signal Device Is Gone\n");
+			DbgPrint("WII!Signal Device Is Gone");
 		}
 
 		WdfObjectDelete(Request);		
@@ -716,13 +641,13 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	BRBOpenChannel = (PBRB_L2CA_OPEN_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, POOLTAG_WIIMOTE);
 	if (BRBOpenChannel == NULL)
 	{
-		debug("BthAllocateBrb Failed\n");
+		DbgPrint("WII!BthAllocateBrb Failed");
 		Status = STATUS_INSUFFICIENT_RESOURCES;
 		goto exit;
 	}
 	
 	//Fill BRB
-	BRBOpenChannel->BtAddress = 247284104376928;
+	BRBOpenChannel->BtAddress = DeviceContext->BtAddress;
 	BRBOpenChannel->Psm = 0x13;
 	BRBOpenChannel->ChannelFlags = 0;
 	BRBOpenChannel->ConfigOut.Flags = 0;
@@ -746,7 +671,7 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	Status = CreateRequest(DeviceContext->Device, DeviceContext->IoTarget, &Request);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("CreateRequest Failed 0x%08X\n", Status);
+		DbgPrint("WII!CreateRequest Failed 0x%x", Status);
 		goto exit;
 	}
    
@@ -754,12 +679,12 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRBOpenChannel);
 	if(!NT_SUCCESS(Status))
 	{
-		debug("SendBRB Failed 0x%08X\n", Status);
-		debug("Control Channel Result %08X (C00000B5 = timeout; C00000D0=max connection reached)\n", Status);
+		DbgPrint("WII!SendBRB Failed 0x%x", Status);
+		DbgPrint("WII!Control Channel Result %08X (C00000B5 = timeout; C00000D0=max connection reached)", Status);
 		
 		if(Status == STATUS_IO_TIMEOUT)
 		{
-			debug("Signal Device Is Gone\n");
+			DbgPrint("WII!Signal Device Is Gone");
 		}
 
 		WdfObjectDelete(Request);		
@@ -772,14 +697,12 @@ NTSTATUS ConnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
 	DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBOpenChannel);
 	
 	// Start Wiimote functionality
-	debug("WiimoteStart\n");
+	DbgPrint("WII!WiimoteStart");
 	SetLEDs(DeviceContext, WIIMOTE_LEDS_ONE);
 	SetReportMode(DeviceContext, 0x30);
 	
-	SetLEDs2(DeviceContext, WIIMOTE_LEDS_TWO);
-	
 exit:
-	debug("End ConnectWiimote\n");
+	DbgPrint("WII!End ConnectWiimote");
 	return Status;
 }
 
@@ -789,7 +712,7 @@ VOID GenFilterSendAndForget(WDFREQUEST Request,PWIIMOTE_CONTEXT DevContext)
 
     WDF_REQUEST_SEND_OPTIONS sendOpts;
 	
-	debug("Begin GenFilterSendAndForget\n");
+	DbgPrint("WII!Begin GenFilterSendAndForget");
 
     //
     // We want to send this Request and not deal with it again.  Note two
@@ -818,11 +741,11 @@ VOID GenFilterSendAndForget(WDFREQUEST Request,PWIIMOTE_CONTEXT DevContext)
         // I/O Target for processing by the driver for that Target.
         //
         status = WdfRequestGetStatus(Request);
-        debug("WdfRequestSend 0x%p failed - 0x%x\n", Request, status);
+		DbgPrint("WII!WdfRequestSend 0x%p failed - 0x%x", Request, status);
         WdfRequestComplete(Request, status);
     }
 	
-	debug("End GenFilterSendAndForget\n");
+	DbgPrint("WII!End GenFilterSendAndForget");
 }
 
 
@@ -832,33 +755,33 @@ void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferL
 	UNREFERENCED_PARAMETER(InputBufferLength);
 	WDFDEVICE  device;
 	
-	debug("Begin EvtIoDeviceControl\n");
+	DbgPrint("WII!Begin EvtIoDeviceControl");
 	
 	device = WdfIoQueueGetDevice(Queue);
 	
 	PWIIMOTE_CONTEXT devCtx = GetDeviceContext(device);
 	
-	debug("IOCTL_HID_GET_COLLECTION_INFORMATION=%08X\n",0x000b01a8);
-	debug("IOCTL_WIIMOTE_CONNECT=%08X\n",IOCTL_WIIMOTE_CONNECT);
-	debug("IOCTL_WIIMOTE_READ=%08X\n",IOCTL_WIIMOTE_READ);
-	debug("IoControlCode=%08X\n",IoControlCode);
+	DbgPrint("WII!IOCTL_HID_GET_COLLECTION_INFORMATION=%08X",0x000b01a8);
+	DbgPrint("WII!IOCTL_WIIMOTE_CONNECT=%08X",IOCTL_WIIMOTE_CONNECT);
+	DbgPrint("WII!IOCTL_WIIMOTE_READ=%08X",IOCTL_WIIMOTE_READ);
+	DbgPrint("WII!IoControlCode=%08X",IoControlCode);
 	
-	debug("device=%08X\n",device);
-	debug("devCtx=%08X\n",devCtx);
-	debug("devCtx->Device=%08X\n",devCtx->Device);
-	debug("devCtx->IoTarget=%08X\n",devCtx->IoTarget);
-	debug("devCtx->ProfileDrvInterface=%08X\n",devCtx->ProfileDrvInterface);
+	DbgPrint("WII!device=%08X",device);
+	DbgPrint("WII!devCtx=%08X",devCtx);
+	DbgPrint("WII!devCtx->Device=%08X",devCtx->Device);
+	DbgPrint("WII!devCtx->IoTarget=%08X",devCtx->IoTarget);
+	DbgPrint("WII!devCtx->ProfileDrvInterface=%08X",devCtx->ProfileDrvInterface);
 	
 	if (IoControlCode ==  IOCTL_WIIMOTE_CONNECT)
 	{
-		debug("Received IOCTL_WIIMOTE_CONNECT\n");
+		DbgPrint("WII!Received IOCTL_WIIMOTE_CONNECT");
 		ConnectWiimote(devCtx);
 		WdfRequestComplete(Request, STATUS_SUCCESS);
 		goto exit;
 	}
 	else if (IoControlCode == IOCTL_WIIMOTE_READ)
 	{
-		debug("Received IOCTL_WIIMOTE_READ\n");
+		DbgPrint("WII!Received IOCTL_WIIMOTE_READ");
 		USHORT  requiredSize = 4;
 		PVOID   Buffer;
 		size_t  bytesReturned = 0;
@@ -872,7 +795,7 @@ void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferL
                                                 NULL
                                                 );
         if(!NT_SUCCESS(status)){
-			debug("WdfRequestRetrieveOutputBuffer failed : 0x%08X\n", status);
+			DbgPrint("WII!WdfRequestRetrieveOutputBuffer failed : 0x%x", status);
 			WdfRequestComplete(Request, status);
             goto exit;
         }
@@ -890,34 +813,7 @@ void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferL
 	GenFilterSendAndForget(Request, devCtx);
 
 exit:	
-	debug("End EvtIoDeviceControl\n");
-}
-
-
-VOID GenFilterEvtRead(WDFQUEUE Queue, WDFREQUEST Request, size_t Length)
-{
-    PWIIMOTE_CONTEXT devContext;
-
-    UNREFERENCED_PARAMETER(Length);
-
-    devContext = GetDeviceContext(WdfIoQueueGetDevice(Queue));
-
-    debug("GenFilterEvtRead -- Request 0x%p\n", Request);
-
-    GenFilterSendAndForget(Request, devContext);
-}
-
-VOID GenFilterEvtWrite(WDFQUEUE Queue, WDFREQUEST Request, size_t Length)
-{
-    PWIIMOTE_CONTEXT devContext;
-
-    UNREFERENCED_PARAMETER(Length);
-
-    devContext = GetDeviceContext(WdfIoQueueGetDevice(Queue));
-
-    debug("GenFilterEvtWrite -- Request 0x%p\n", Request);
-
-    GenFilterSendAndForget(Request, devContext);
+	DbgPrint("WII!End EvtIoDeviceControl");
 }
 
 VOID EvtIoDeviceControlForRawPdo(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferLength, size_t InputBufferLength, ULONG IoControlCode)
@@ -927,14 +823,14 @@ VOID EvtIoDeviceControlForRawPdo(WDFQUEUE Queue, WDFREQUEST Request, size_t Outp
     PRPDO_DEVICE_DATA pdoData;
     WDF_REQUEST_FORWARD_OPTIONS forwardOptions;
 	
-	debug("Begin EvtIoDeviceControlForRawPdo\n");
+	DbgPrint("WII!Begin EvtIoDeviceControlForRawPdo");
         
     pdoData = PdoGetData(parent);
 
     UNREFERENCED_PARAMETER(OutputBufferLength);
     UNREFERENCED_PARAMETER(InputBufferLength);
 
-	debug("IoControlCode=%08X\n",IoControlCode);
+	DbgPrint("WII!IoControlCode=%08X",IoControlCode);
     //
     // Process the ioctl and complete it when you are done.
     // Since the queue is configured for serial dispatch, you will
@@ -954,7 +850,7 @@ VOID EvtIoDeviceControlForRawPdo(WDFQUEUE Queue, WDFREQUEST Request, size_t Outp
         break;
     }
 
-	debug("End EvtIoDeviceControlForRawPdo\n");
+	DbgPrint("WII!End EvtIoDeviceControlForRawPdo");
 
     return;
 }
@@ -967,7 +863,7 @@ NTSTATUS PrepareHardware( WDFDEVICE Device, WDFCMRESLIST ResourcesRaw, WDFCMRESL
 	UNREFERENCED_PARAMETER(ResourcesTranslated);
 	
 	
-	debug("PrepareHardware\n");
+	DbgPrint("WII!PrepareHardware");
 	
 	return status;
 }
@@ -979,16 +875,16 @@ NTSTATUS DeviceD0Entry( WDFDEVICE Device, WDF_POWER_DEVICE_STATE PreviousState)
 	
 	UNREFERENCED_PARAMETER(PreviousState);
 	
-	debug("DeviceD0Entry\n");
+	DbgPrint("WII!DeviceD0Entry");
 	
 	//
 	// Create a symbolic link for the control object so that usermode can open
 	// the device.
 	//
-	debug("WdfDeviceCreateSymbolicLink\n");
+	DbgPrint("WII!WdfDeviceCreateSymbolicLink");
 	status = WdfDeviceCreateSymbolicLink(Device, &symbolicLinkName);
 	if (!NT_SUCCESS(status)) {
-		debug("Failed WdfDeviceCreateSymbolicLink %x\n", status);
+		DbgPrint("WII!Failed WdfDeviceCreateSymbolicLink : 0x%x", status);
 	}
 	
 	return status;	
@@ -1000,7 +896,7 @@ NTSTATUS DeviceD0Exit( WDFDEVICE Device, WDF_POWER_DEVICE_STATE TargetState)
 	UNREFERENCED_PARAMETER(Device);
 	UNREFERENCED_PARAMETER(TargetState);
 	
-	debug("DeviceD0Exit\n");	
+	DbgPrint("WII!DeviceD0Exit");
 
 	return status;	
 }
@@ -1011,7 +907,7 @@ NTSTATUS ReleaseHardware( WDFDEVICE Device, WDFCMRESLIST ResourcesTranslated)
 	UNREFERENCED_PARAMETER(Device);
 	UNREFERENCED_PARAMETER(ResourcesTranslated);
 	
-	debug("ReleaseHardware\n");
+	DbgPrint("WII!ReleaseHardware");
 	
 	return status;	
 }
@@ -1035,7 +931,7 @@ NTSTATUS CreateRawPdo(WDFDEVICE Device)
     DECLARE_UNICODE_STRING_SIZE(buffer, MAX_ID_LEN);
 	WDF_PNPPOWER_EVENT_CALLBACKS PnpPowerCallbacks;
 
-    debug("Begin CreateRawPdo\n");
+	DbgPrint("WII!Begin CreateRawPdo");
 
     //
     // Allocate a WDFDEVICE_INIT structure and set the properties
@@ -1169,7 +1065,7 @@ NTSTATUS CreateRawPdo(WDFDEVICE Device)
                                         &queue // pointer to default queue
                                         );
     if (!NT_SUCCESS(status)) {
-        debug("WdfIoQueueCreate failed 0x%x\n", status);
+		DbgPrint("WII!WdfIoQueueCreate failed 0x%x", status);
         goto Cleanup;
     }
 
@@ -1208,7 +1104,7 @@ NTSTATUS CreateRawPdo(WDFDEVICE Device)
         goto Cleanup;
     }
 
-	debug("End CreateRawPdo\n");
+	DbgPrint("WII!End CreateRawPdo");
 
     //
     // pDeviceInit will be freed by WDF.
@@ -1217,7 +1113,7 @@ NTSTATUS CreateRawPdo(WDFDEVICE Device)
 
 Cleanup:
 
-    debug("CreateRawPdo failed %x\n", status);
+	DbgPrint("WII!CreateRawPdo failed 0x%x", status);
 
     //
     // Call WdfDeviceInitFree if you encounter an error while initializing
@@ -1245,11 +1141,11 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
 	WDFQUEUE                hQueue;
 	PDEVICE_OBJECT PhysicalDevice;
     
-	debug("Begin EvtDriverDeviceAdd\n");
+	DbgPrint("WII!Begin EvtDriverDeviceAdd");
 
 	PhysicalDevice = WdfFdoInitWdmGetPhysicalDevice(DeviceInit);
-	debug("PhysicalDevice DriverName= %S\n", PhysicalDevice->DriverObject->DriverName.Buffer);
-	debug("PhysicalDevice HardwareDatabase= %S\n", PhysicalDevice->DriverObject->HardwareDatabase->Buffer);
+	DbgPrint("WII!PhysicalDevice DriverName= %S", PhysicalDevice->DriverObject->DriverName.Buffer);
+	DbgPrint("WII!PhysicalDevice HardwareDatabase= %S", PhysicalDevice->DriverObject->HardwareDatabase->Buffer);
 
     //
     // Tell the framework that you are filter driver. Framework
@@ -1275,19 +1171,20 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
         );
     if (!NT_SUCCESS(status))
     {
-        debug("WdfDeviceCreate failed with Status code %d\n", status);
+		DbgPrint("WII!WdfDeviceCreate failed with Status code 0x%x", status);
         goto exit;
     }
 	
 	PDEVICE_OBJECT LowerDeviceObject = WdfDeviceWdmGetAttachedDevice(device);
-	debug("LowerDeviceObject DriverName= %S\n", LowerDeviceObject->DriverObject->DriverName.Buffer);
+	DbgPrint("WII!LowerDeviceObject DriverName= %S", LowerDeviceObject->DriverObject->DriverName.Buffer);
 	
 	PDEVICE_OBJECT UpperDeviceObject = PhysicalDevice -> AttachedDevice;
-	debug("UpperDeviceObject (from pdo) DriverName= %S\n", UpperDeviceObject->DriverObject->DriverName.Buffer);
+	DbgPrint("WII!UpperDeviceObject (from pdo) DriverName= %S", UpperDeviceObject->DriverObject->DriverName.Buffer);
 	
 	PWIIMOTE_CONTEXT devCtx = GetDeviceContext(device);
 	devCtx->Device = device;
 	devCtx->IoTarget = WdfDeviceGetIoTarget(device);
+	devCtx->BtAddress = 247284104376928;
 	
 	status = WdfFdoQueryForInterface(
 		device,
@@ -1299,15 +1196,15 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
 	);
 	if (!NT_SUCCESS(status))
     {
-        debug("WdfFdoQueryForInterface failed, Status code %d\n", status);  
+		DbgPrint("WII!WdfFdoQueryForInterface failed, Status code 0x%x", status);
 		goto exit;		
     }	
 	
-	debug("device=%08X\n",device);
-	debug("devCtx=%08X\n",devCtx);
-	debug("devCtx->Device=%08X\n",devCtx->Device);
-	debug("devCtx->IoTarget=%08X\n",devCtx->IoTarget);
-	debug("devCtx->ProfileDrvInterface=%08X\n",devCtx->ProfileDrvInterface);
+	DbgPrint("WII!device=%08X",device);
+	DbgPrint("WII!devCtx=%08X",devCtx);
+	DbgPrint("WII!devCtx->Device=%08X",devCtx->Device);
+	DbgPrint("WII!devCtx->IoTarget=%08X",devCtx->IoTarget);
+	DbgPrint("WII!devCtx->ProfileDrvInterface=%08X",devCtx->ProfileDrvInterface);
 	
     //
     // Create a new queue to handle IOCTLs that will be forwarded to us from
@@ -1315,25 +1212,12 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
     //
     WDF_IO_QUEUE_CONFIG_INIT(&ioQueueConfig, WdfIoQueueDispatchSequential);
 
-	//
-    // Create our default Queue -- This is how we receive Requests.
-    //
-    // WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&ioQueueConfig, WdfIoQueueDispatchParallel);
-
     //
     // Framework by default creates non-power managed queues for
     // filter drivers.
     //
     ioQueueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
-	
-	//
-    // Specify callbacks for those Requests that we want this driver to "see."
-    //
-    // ioQueueConfig.EvtIoRead          = GenFilterEvtRead;
-    // ioQueueConfig.EvtIoWrite         = GenFilterEvtWrite;
-    // ioQueueConfig.EvtIoDeviceControl = EvtIoDeviceControl;
-	// ioQueueConfig.EvtIoInternalDeviceControl = EvtIoDeviceControl;
-	
+		
 
     status = WdfIoQueueCreate(device,
                             &ioQueueConfig,
@@ -1341,7 +1225,7 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
                             &hQueue
                             );
     if (!NT_SUCCESS(status)) {
-        debug("WdfIoQueueCreate failed 0x%x\n", status);
+		DbgPrint("WII!WdfIoQueueCreate failed 0x%x", status);
         goto exit;
     }
 
@@ -1353,24 +1237,7 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
     
     status = CreateRawPdo(device);
 	
-	// https://stackoverflow.com/questions/2643084/sysinternals-winobj-device-listing-mechanism
-	// https://sourceforge.net/p/ntobjx/code/ci/default/tree/ntobjx.cpp
-	// debug("Test1\n");
-	
-	// UNICODE_STRING targetName;
-	//RtlInitUnicodeString(&targetName, L"\\\\?\\SystemBusQc#SMD_BT#4&315a27b&0&4097#{0850302a-b344-4fda-9be9-90576b8d46f0}\0");
-	// RtlInitUnicodeString(&targetName, L"\\SystemBusQc\\SMD_BT\\4&315a27b&0&4097");
-	// PFILE_OBJECT FileObject;
-	// PDEVICE_OBJECT LowerDeviceObject2 = NULL;
-	// status = IoGetDeviceObjectPointer(&targetName, FILE_READ_DATA, &FileObject, &LowerDeviceObject2);
-	// if (!NT_SUCCESS(status)) {
-        // debug("IoGetDeviceObjectPointer failed 0x%x (0xc0000033=STATUS_OBJECT_NAME_INVALID; 0xC000003B=STATUS_OBJECT_PATH_SYNTAX_BAD; 0xC000003A=STATUS_OBJECT_PATH_NOT_FOUND)\n", status);
-        // goto exit;
-    // }
-	// debug("FileObject=%08X\n",FileObject);
-	// debug("LowerDeviceObject2=%08X\n",LowerDeviceObject2);
-									   
-			
+									  			
 exit:    
     //
     // We don't need to worry about deleting any objects on failure
@@ -1378,6 +1245,6 @@ exit:
     // we return an error, framework will delete the device and as a 
     // result all the child objects will get deleted along with that.
     //
-	debug("End EvtDriverDeviceAdd\n");
+	DbgPrint("WII!End EvtDriverDeviceAdd");
     return status;
 }

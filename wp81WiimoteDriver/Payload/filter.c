@@ -13,11 +13,6 @@
 #include <wdf.h>
 #include <ntstrsafe.h>
 
-#define WdfFltrTrace(_MSG_) { \
-        DbgPrint("Filter!"__FUNCTION__ ": ");   \
-        DbgPrint _MSG_;                         \
-}
-
 #define REQUIRED_ACCESS_FROM_CTL_CODE(ctrlCode)     (((ULONG)(ctrlCode & 0xC000)) >> 14)
 
 typedef struct _DEVICEFILTER_CONTEXT
@@ -72,7 +67,7 @@ FilterForwardRequest(
 
     if (ret == FALSE) {
         status = WdfRequestGetStatus (Request);
-        DbgPrint("Filter!WdfRequestSend failed: 0x%x\n", status);
+        DbgPrint("Filter!WdfRequestSend failed: 0x%x", status);
         WdfRequestComplete(Request, status);
     }
 
@@ -109,10 +104,10 @@ FilterEvtIoDeviceControl(
 			ULONG highAddress = (authResponse->address >> 32);
 			ULONG lowAddress = ((authResponse->address << 32) >> 32);
 			RtlCopyMemory(pin, authResponse->info.pin, BTH_MAX_PIN_SIZE);
-			DbgPrint("Filter!pin=[%s] pin length=%u BT addr=%02X %02X %02X %02X %02X %02X\n", pin, authResponse->info.pinLength, ((highAddress >> 8) & 0xFF), (highAddress & 0xFF), ((lowAddress >> 24) & 0xFF), ((lowAddress >> 16) & 0xFF), ((lowAddress >> 8) & 0xFF), (lowAddress & 0xFF));
+			DbgPrint("Filter!pin=[%s] pin length=%u BT addr=%02X %02X %02X %02X %02X %02X", pin, authResponse->info.pinLength, ((highAddress >> 8) & 0xFF), (highAddress & 0xFF), ((lowAddress >> 24) & 0xFF), ((lowAddress >> 16) & 0xFF), ((lowAddress >> 8) & 0xFF), (lowAddress & 0xFF));
 			if (strcmp(pin,"---") == 0)
 			{
-				DbgPrint("Filter!Replace existing pin with computed wiimote pin\n");
+				DbgPrint("Filter!Replace existing pin with computed wiimote pin");
 				RtlZeroMemory(authResponse->info.pin, BTH_MAX_PIN_SIZE);
 				RtlCopyMemory(authResponse->info.pin, &(authResponse->address), 6);
 				authResponse->info.pinLength=6;
@@ -142,7 +137,7 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
     WDF_OBJECT_ATTRIBUTES           deviceAttributes;
 	WDF_IO_QUEUE_CONFIG     		ioQueueConfig;
     
-	DbgPrint("Filter!Begin EvtDriverDeviceAdd\n");
+	DbgPrint("Filter!Begin EvtDriverDeviceAdd");
 
     //
     // Tell the framework that you are filter driver. Framework
@@ -168,7 +163,7 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
         );
     if (!NT_SUCCESS(status))
     {
-        DbgPrint("Filter!WdfDeviceCreate failed with Status code %d\n", status);
+        DbgPrint("Filter!WdfDeviceCreate failed with Status code %d", status);
         goto exit;
     }
 		
@@ -183,12 +178,12 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
                             WDF_NO_HANDLE // pointer to default queue
                             );
     if (!NT_SUCCESS(status)) {
-        DbgPrint("Filter!WdfIoQueueCreate failed 0x%x\n", status);
+        DbgPrint("Filter!WdfIoQueueCreate failed 0x%x", status);
         goto exit;
     }   
 			
 exit:    
-	DbgPrint("Filter!End EvtDriverDeviceAdd\n");
+	DbgPrint("Filter!End EvtDriverDeviceAdd");
     return status;
 }
 
@@ -196,14 +191,14 @@ void EvtCleanupCallback(WDFOBJECT DriverObject)
 {
     UNREFERENCED_PARAMETER(DriverObject);
 	
-	DbgPrint("Filter!Begin EvtCleanupCallback\n");
-	DbgPrint("Filter!End EvtCleanupCallback\n");
+	DbgPrint("Filter!Begin EvtCleanupCallback");
+	DbgPrint("Filter!End EvtCleanupCallback");
 }
 
 // DriverEntry
 NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath)
 {
-	DbgPrint("Filter!Begin DriverEntry\n");
+	DbgPrint("Filter!Begin DriverEntry");
 	
     NTSTATUS status;
     WDFDRIVER driver;
@@ -226,8 +221,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
         &driver
         );
 
-	DbgPrint("Filter!Driver registryPath= %S\n", RegistryPath->Buffer);
+	DbgPrint("Filter!Driver registryPath= %S", RegistryPath->Buffer);
 
-	DbgPrint("Filter!End DriverEntry\n");
+	DbgPrint("Filter!End DriverEntry");
     return status;
 }

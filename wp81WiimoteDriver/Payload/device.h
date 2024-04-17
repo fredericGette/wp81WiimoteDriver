@@ -2,13 +2,13 @@
 
 #include <ntifs.h>
 #include <wdf.h>
+#include <ntstrsafe.h>
 #include <bthdef.h>
 #include <bthioctl.h>
 #include <bthddi.h>
 #include <initguid.h> 
 #include <bthguid.h>
 #include <Hidclass.h>
-#include "log.h"
 
 
 #define POOLTAG_WIIMOTE 'wiim'
@@ -37,6 +37,11 @@ typedef struct _WIIMOTE_CONTEXT
     // Queue for handling requests that come from the rawPdo
     //
     WDFQUEUE rawPdoQueue;
+
+	//
+	// Address of the remote device.
+	//
+	BTH_ADDR BtAddress;
 
 } WIIMOTE_CONTEXT, *PWIIMOTE_CONTEXT;
 
@@ -89,35 +94,3 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(RPDO_DEVICE_DATA, PdoGetData);
 #define SYMBOLIC_NAME_STRING      L"\\DosDevices\\WiimoteRawPdo"
 
 
-// _declspec( naked dllexport ) NTSTATUS NTAPI ZwQueryDirectoryObject( IN
-// HANDLE DirectoryHandle,
-
-// OUT PVOID Buffer,
-
-// IN ULONG Length,
-
-// IN BOOLEAN ReturnSingleEntry,
-
-// IN BOOLEAN RestartScan,
-
-// IN OUT PULONG Context,
-
-// OUT PULONG ReturnLength OPTIONAL )
-// {
-// UNREFERENCED_PARAMETER( DirectoryHandle );
-// UNREFERENCED_PARAMETER( Buffer );
-// UNREFERENCED_PARAMETER( Length );
-// UNREFERENCED_PARAMETER( ReturnSingleEntry );
-// UNREFERENCED_PARAMETER( RestartScan );
-// UNREFERENCED_PARAMETER( Context );
-// UNREFERENCED_PARAMETER( ReturnLength );
-
-// _asm
-// {
-// mov eax, 0x66 // NT4
-// mov eax, 0x7E // WiN 2K .. should really link
-// lea edx, [esp+4]
-// int 0x2e
-// ret 0x1c
-// }
-// }

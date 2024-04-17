@@ -106,21 +106,19 @@
 
 #include <ntifs.h>
 #include <wdf.h>
-#include "log.h"
 #include "device.h"
 
 void EvtCleanupCallback(WDFOBJECT DriverObject) 
 {
     UNREFERENCED_PARAMETER(DriverObject);
 	
-	debug("Begin EvtCleanupCallback\n");
-	debug("End EvtCleanupCallback\n");
+	DbgPrint("WII!EvtCleanupCallback");
 }
 
 // DriverEntry
 NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath)
 {
-	debug("Begin DriverEntry\n");
+	DbgPrint("WII!Begin DriverEntry");
 	
     NTSTATUS status;
     WDFDRIVER driver;
@@ -143,11 +141,11 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT  DriverObject, PUNICODE_STRING  RegistryPath
         &driver
         );
 
-	debug("Driver registryPath= %S\n", RegistryPath->Buffer);
-	debug("DriverName= %S\n", DriverObject->DriverName.Buffer);
-	debug("HardwareDatabase= %S\n", DriverObject->HardwareDatabase->Buffer);
+	DbgPrint("WII!Driver registryPath= %S", RegistryPath->Buffer);
+	DbgPrint("WII!DriverName= %S", DriverObject->DriverName.Buffer);
+	DbgPrint("WII!HardwareDatabase= %S", DriverObject->HardwareDatabase->Buffer);
 
-	debug("End DriverEntry\n");
+	DbgPrint("WII!End DriverEntry");
     return status;
 }
 
