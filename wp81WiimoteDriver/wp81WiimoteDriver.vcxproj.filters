@@ -52,6 +52,7 @@
     <ClInclude Include="Payload\device.h">
       <Filter>Payload</Filter>
     </ClInclude>
+    <ClInclude Include="Log.h" />
   </ItemGroup>
   <ItemGroup>
     <AppxManifest Include="Package.appxmanifest" />

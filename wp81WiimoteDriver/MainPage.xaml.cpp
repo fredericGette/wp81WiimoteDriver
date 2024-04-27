@@ -7,6 +7,7 @@
 #include "MainPage.xaml.h"
 #include "Win32Api.h"
 #include <initguid.h>
+#include "Log.h"
 
 #define WIIMOTE_DEVICE 0x8000
 
@@ -41,18 +42,6 @@ MainPage::MainPage()
 	InitializeComponent();
 }
 
-void debug(WCHAR* format, ...)
-{
-	va_list args;
-	va_start(args, format);
-
-	WCHAR buffer[1000];
-	_vsnwprintf_s(buffer, sizeof(buffer), format, args);
-
-	OutputDebugStringW(buffer);
-
-	va_end(args);
-}
 
 /// <summary>
 /// Invoked when this page is about to be displayed in a Frame.
@@ -113,7 +102,7 @@ void wp81WiimoteDriver::MainPage::Install()
 	// lumia 520 : System\\CurrentControlSet\\Enum\\SystemBusQc\\SMD_BT\\4&315a27b&0&4097
 	AddUpperFilter(L"wp81pairingfilter", L"System\\CurrentControlSet\\Enum\\SystemBusQc\\SMD_BT\\4&315a27b&0&4097");
 
-	TextTest->Text += L"Install/Update drivers...\n";
+	Log(Window::Current, LogsList, L"Install/Update drivers...");
 
 	std::stack<Platform::String ^> fileNames;
 	fileNames.push(L"wp81pairingfilter.sys");
@@ -123,15 +112,15 @@ void wp81WiimoteDriver::MainPage::Install()
 
 void wp81WiimoteDriver::MainPage::Run()
 {
+	Windows::UI::Xaml::Window^ window = Window::Current;
 
-	TextTest->Text += L"Calling device...";
-	create_task([this]()
+	Log(window, LogsList, L"Calling device...");
+	create_task([this, window]()
 	{
 		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WiimoteRawPdo", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 		if (hDevice == INVALID_HANDLE_VALUE)
 		{
-			debug(L"Failed to open device.");
-			UIConsoleAddText(L"Failed to open device.\n");
+			LogError(window, LogsList, L"Failed to open device! 0x%X", GetLastError());
 			return;
 		}
 
@@ -139,13 +128,11 @@ void wp81WiimoteDriver::MainPage::Run()
 		BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_CONNECT, nullptr, 0, nullptr, 0, &returned, nullptr);
 		if (success)
 		{
-			debug(L"Device call succeeded!\n");
-			UIConsoleAddText(L"succeeded!\n");
+			LogSuccess(window, LogsList, L"OK");
 		}
 		else
 		{
-			debug(L"Device call failed!\n");
-			UIConsoleAddText(L"failed!\n");
+			LogError(window, LogsList, L"Failed to send IOCTL_WIIMOTE_CONNECT! 0x%X", GetLastError());
 		}
 
 		CloseHandle(hDevice);
@@ -154,15 +141,15 @@ void wp81WiimoteDriver::MainPage::Run()
 
 void wp81WiimoteDriver::MainPage::Read()
 {
+	Windows::UI::Xaml::Window^ window = Window::Current;
 
-	TextTest->Text += L"Reading device...";
-	create_task([this]()
+	Log(window, LogsList, L"Reading device...");
+	create_task([this, window]()
 	{
 		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WiimoteRawPdo", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 		if (hDevice == INVALID_HANDLE_VALUE)
 		{
-			debug(L"Failed to open device.");
-			UIConsoleAddText(L"Failed to open device.\n");
+			LogError(window, LogsList, L"Failed to open device! 0x%X", GetLastError());
 			return;
 		}
 
@@ -187,21 +174,12 @@ void wp81WiimoteDriver::MainPage::Read()
 			else
 			{
 				debug(L"Device call failed!\n");
-				UIConsoleAddText(L"-");
+				Log(window, LogsList, L"-");
 			}
 		}
 
 		CloseHandle(hDevice);
 	});
-}
-
-void MainPage::UIConsoleAddText(Platform::String ^ text) {
-	Dispatcher->RunAsync(
-		CoreDispatcherPriority::Normal,
-		ref new DispatchedHandler([this, text]()
-	{
-		TextTest->Text += text;
-	}));
 }
 
 void MainPage::UIButton(boolean flag) {
@@ -223,9 +201,11 @@ void MainPage::UIButton(boolean flag) {
 
 void MainPage::CopyFiles(std::stack<Platform::String ^> fileNames) {
 
+	Windows::UI::Xaml::Window^ window = Window::Current;
+
 	if (fileNames.empty())
 	{
-		UIConsoleAddText(L"You can now reboot the phone to start the drivers.\n");
+		Log(window, LogsList, L"You can now reboot the phone to start the drivers.");
 		return;
 	}
 
@@ -234,10 +214,10 @@ void MainPage::CopyFiles(std::stack<Platform::String ^> fileNames) {
 
 	debug(L"%ls\n", fileName->Data());
 
-	UIConsoleAddText(L"Update " + fileName + L"...");
+	Log(window, LogsList, L"-Update %s...", fileName->Data());
 
 	Uri^ uri = ref new Uri(L"ms-appx:///Payload/" + fileName);
-	create_task(StorageFile::GetFileFromApplicationUriAsync(uri)).then([=](task<StorageFile^> t)
+	create_task(StorageFile::GetFileFromApplicationUriAsync(uri)).then([this, window, fileName, fileNames](task<StorageFile^> t)
 	{
 		StorageFile ^storageFile = t.get();
 		Platform::String^ filePath = storageFile->Path;
@@ -245,13 +225,12 @@ void MainPage::CopyFiles(std::stack<Platform::String ^> fileNames) {
 		Platform::String ^ newFileName = L"C:\\windows\\system32\\drivers\\" + fileName;
 		if (!win32Api.CopyFileW(filePath->Data(), newFileName->Data(), FALSE))
 		{
-			debug(L"CopyFileW error: %d (32=ERROR_SHARING_VIOLATION)\n", GetLastError());
-			UIConsoleAddText(L"Failed\n");
+			LogError(window, LogsList, L"CopyFileW error: %d (32=ERROR_SHARING_VIOLATION)", GetLastError());
 		}
 		else
 		{
 			debug(L"File copied\n");
-			UIConsoleAddText(L"OK\n");
+			LogSuccess(window, LogsList, L"OK");
 			CopyFiles(fileNames);
 		}
 	});
@@ -259,7 +238,7 @@ void MainPage::CopyFiles(std::stack<Platform::String ^> fileNames) {
 
 void MainPage::RegisterDriver(Platform::String ^ driverName, Platform::String ^ driverDescription)
 {
-	TextTest->Text += L"Create/Update driver "+driverName+L" in registry... ";
+	Log(Window::Current, LogsList, L"Create/Update driver %s in registry... ", driverName->Data());
 	
 	HKEY HKEY_LOCAL_MACHINE = (HKEY)0x80000002;
 	DWORD retCode;
@@ -268,8 +247,7 @@ void MainPage::RegisterDriver(Platform::String ^ driverName, Platform::String ^ 
 	retCode = win32Api.RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services", 0, KEY_ALL_ACCESS, &servicesKey);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegOpenKeyExW : %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegOpenKeyExW : %d", retCode);
 		return;
 	}
 
@@ -277,24 +255,21 @@ void MainPage::RegisterDriver(Platform::String ^ driverName, Platform::String ^ 
 	retCode = win32Api.RegCreateKeyExW(servicesKey, driverName->Data(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &driverKey, NULL);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegCreateKeyExW '%s': %d\n", driverName, retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegCreateKeyExW '%s': %d", driverName, retCode);
 		return;
 	}
 
 	retCode = win32Api.RegSetValueExW(driverKey, L"Description", NULL, REG_SZ, (BYTE*)driverDescription->Data(), (driverDescription->Length()+1) * sizeof(WCHAR));
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegSetValueExW 'Description': %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegSetValueExW 'Description': %d", retCode);
 		return;
 	}
 
 	retCode = win32Api.RegSetValueExW(driverKey, L"DisplayName", NULL, REG_SZ, (BYTE*)driverName->Data(), (driverName->Length() + 1) * sizeof(WCHAR));
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegSetValueExW 'DisplayName': %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegSetValueExW 'DisplayName': %d", retCode);
 		return;
 	}
 
@@ -303,8 +278,7 @@ void MainPage::RegisterDriver(Platform::String ^ driverName, Platform::String ^ 
 	retCode = win32Api.RegSetValueExW(driverKey, L"ErrorControl", NULL, REG_DWORD, ValueData, 4);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegSetValueExW 'ErrorControl': %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegSetValueExW 'ErrorControl': %d", retCode);
 		return;
 	}
 
@@ -312,8 +286,7 @@ void MainPage::RegisterDriver(Platform::String ^ driverName, Platform::String ^ 
 	retCode = win32Api.RegSetValueExW(driverKey, L"Start", NULL, REG_DWORD, ValueData, 4);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegSetValueExW 'Start': %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegSetValueExW 'Start': %d", retCode);
 		return;
 	}
 
@@ -321,33 +294,30 @@ void MainPage::RegisterDriver(Platform::String ^ driverName, Platform::String ^ 
 	retCode = win32Api.RegSetValueExW(driverKey, L"Type", NULL, REG_DWORD, ValueData, 4);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegSetValueExW 'Type': %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegSetValueExW 'Type': %d", retCode);
 		return;
 	}
 
 	retCode = win32Api.RegCloseKey(driverKey);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegCloseKey '%s': %d\n", driverName, retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegCloseKey '%s': %d", driverName, retCode);
 		return;
 	}
 
 	retCode = win32Api.RegCloseKey(servicesKey);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegCloseKey 'servicesKey': %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegCloseKey 'servicesKey': %d", retCode);
 		return;
 	}
 
-	TextTest->Text += L"OK\n";
+	LogSuccess(Window::Current, LogsList, L"OK");
 }
 
 void MainPage::AddUpperFilter(Platform::String ^ filterName, Platform::String ^ targetDriver)
 {
-	TextTest->Text += L"Add " + filterName + L" as Upper Filter... ";
+	Log(Window::Current, LogsList, L"Add %s as Upper Filter... ", filterName->Data());
 
 	HKEY HKEY_LOCAL_MACHINE = (HKEY)0x80000002;
 	DWORD retCode;
@@ -361,33 +331,30 @@ void MainPage::AddUpperFilter(Platform::String ^ filterName, Platform::String ^ 
 	retCode = win32Api.RegOpenKeyExW(HKEY_LOCAL_MACHINE, targetDriver->Data(), 0, KEY_ALL_ACCESS, &pdoKey);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegOpenKeyExW : %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegOpenKeyExW : %d", retCode);
 		return;
 	}
 
 	retCode = win32Api.RegSetValueExW(pdoKey, L"UpperFilters", NULL, REG_MULTI_SZ, (BYTE*)newValueData, newValueDataSize * 2);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegSetValueExW 'UpperFilters': %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegSetValueExW 'UpperFilters': %d", retCode);
 		return;
 	}
 
 	retCode = win32Api.RegCloseKey(pdoKey);
 	if (retCode != ERROR_SUCCESS)
 	{
-		debug(L"Error RegCloseKey 'pdoKey': %d\n", retCode);
-		TextTest->Text += L"Failed\n";
+		LogError(Window::Current, LogsList, L"Error RegCloseKey 'pdoKey': %d", retCode);
 		return;
 	}
 
-	TextTest->Text += L"OK\n";
+	LogSuccess(Window::Current, LogsList, L"OK");
 }
 
 void MainPage::CheckTestSignedDriver()
 {
-	TextTest->Text = "Checking test-signed drivers...";
+	Log(Window::Current, LogsList, L"Checking test-signed drivers...");
 
 	HKEY HKEY_LOCAL_MACHINE = (HKEY)0x80000002;
 	DWORD retCode;
@@ -425,12 +392,11 @@ void MainPage::CheckTestSignedDriver()
 			if (wcsstr((WCHAR*)ValueData, L"TESTSIGNING"))
 			{
 				debug(L"OK\n");
-				TextTest->Text += L"OK\n";
+				LogSuccess(Window::Current, LogsList, L"OK");
 			}
 			else
 			{
-				TextTest->Text += L"Failed\n";
-				TextTest->Text += L"Please enable test-signed drivers to load!!\n";
+				LogError(Window::Current, LogsList, L"Failed\nPlease enable test-signed drivers to load!!");
 			}
 		}
 

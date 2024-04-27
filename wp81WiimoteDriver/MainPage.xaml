@@ -7,11 +7,39 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Margin="0,0.333,0,471.667" Height="105">
-        <TextBlock x:Name="TextTest" HorizontalAlignment="Left" TextWrapping="Wrap" FontSize="18"/>
-        <Button x:Name="Left" Background="MediumSlateBlue" Foreground="White" Margin="0,101,0,-53">LEFT</Button>
-    </Grid>
-
+    <StackPanel>
+        <!-- Lumia 520: max height with button description = 570px -->
+        <ListBox x:Name="LogsList" Height="285" Background="Black" Foreground="White" FontFamily="Courier New" FontSize="18" ScrollViewer.VerticalScrollBarVisibility="Visible">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="0"/>
+                </Style>
+            </ListBox.ItemContainerStyle>
+        </ListBox>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Button x:Name="Up" Grid.Row="0" Grid.Column="1" Background="Black" Foreground="White">UP</Button>
+            <Button x:Name="Left" Grid.Row="1" Grid.Column="0" Background="Black" Foreground="White">LEFT</Button>
+            <Button x:Name="Right" Grid.Row="1" Grid.Column="2" Background="Black" Foreground="White">RIGHT</Button>
+            <Button x:Name="Down" Grid.Row="2" Grid.Column="1" Background="Black" Foreground="White">DOWN</Button>
+            <Button x:Name="ButtonA" Grid.Row="3" Grid.Column="0" Background="Black" Foreground="White">A</Button>
+            <Button x:Name="ButtonB" Grid.Row="3" Grid.Column="2" Background="Black" Foreground="White">B</Button>
+            <Button x:Name="Button1" Grid.Row="4" Grid.Column="0" Background="Black" Foreground="White">1</Button>
+            <Button x:Name="Button2" Grid.Row="4" Grid.Column="2" Background="Black" Foreground="White">2</Button>
+        </Grid>
+    </StackPanel>
+    
     <Page.BottomAppBar>
         <CommandBar>
             <AppBarButton x:Name="InstallAppBarButton" Tag="Install" Label="Install" Icon="Download" Click="AppBarButton_Click"/>
