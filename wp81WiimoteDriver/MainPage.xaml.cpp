@@ -35,13 +35,14 @@ using namespace Windows::UI::Core;
 
 Win32Api win32Api;
 BOOL stopReading;
+BTH_ADDR selectedBthAddr;
 
 MainPage::MainPage()
 {
 	InitializeComponent();
 }
 
-void DetectWiimotes()
+void MainPage::DetectWiimotes()
 {
 	BLUETOOTH_DEVICE_INFO* device_info = new BLUETOOTH_DEVICE_INFO;
 	ZeroMemory(device_info, sizeof(BLUETOOTH_DEVICE_INFO));
@@ -73,7 +74,28 @@ void DetectWiimotes()
 		debug(L"\tConnected: %s (%d)\n", (device_info->fConnected != FALSE) ? L"True" : L"False", device_info->fConnected);
 		debug(L"\tDevice address: %I64u\n", device_info->Address.ullLong);
 		debug(L"\n");
+
+		TextBlock^ tbx = ref new TextBlock();
+		tbx->Text = ref new String(device_info->szName);
+		tbx->Tag = ref new Box<ULONGLONG>(device_info->Address.ullLong);
+		DevicesList->Items->Append(tbx);
+
 	} while (win32Api.BluetoothFindNextDevice(device_search, device_info));
+}
+
+void MainPage::OnSelectDevice(Platform::Object ^ sender, Windows::UI::Xaml::RoutedEventArgs ^ e)
+{
+	ListBox^ l = (ListBox^)sender;
+	TextBlock^ tbx = (TextBlock^)l->SelectedItem;
+	debug(L"Selected Device : %s\n", tbx->Text->Data());
+	Box<ULONGLONG>^ box = (Box<ULONGLONG>^)tbx->Tag;
+	debug(L"Bluetooth Address : %I64u\n", box->Value);
+	selectedBthAddr = box->Value;
+
+	DevicesList->Visibility = Windows::UI::Xaml::Visibility::Collapsed;
+	ButtonsGrid->Visibility = Windows::UI::Xaml::Visibility::Visible;
+
+	Log(Window::Current, LogsList, L"Device selected is '%s'\nPress 1 + 2 buttons on the Wiimote then run the 'connect' action when the LEDs are blicking.", tbx->Text->Data());
 }
 
 
@@ -85,6 +107,8 @@ void DetectWiimotes()
 void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 {
 	(void) e;	// Unused parameter
+
+	ButtonsGrid->Visibility = Windows::UI::Xaml::Visibility::Collapsed;
 
 	CheckTestSignedDriver();
 	DetectWiimotes();
@@ -160,9 +184,7 @@ void MainPage::ConnectWiimote()
 		}
 
 		DWORD returned;
-		ULONGLONG bthAddr = 247284104376928;
-		debug(L"bthAddr %I64u\n", bthAddr);
-		BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_CONNECT, &bthAddr, 8, nullptr, 0, &returned, nullptr);
+		BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_CONNECT, &selectedBthAddr, 8, nullptr, 0, &returned, nullptr);
 		if (success)
 		{
 			LogSuccess(window, LogsList, L"OK");
@@ -328,7 +350,7 @@ void MainPage::DisconnectWiimote()
 		if (success)
 		{
 			LogSuccess(window, LogsList, L"OK");
-			Log(window, LogsList, L"Press the power button of the Wiimote until the led is off.");
+			Log(window, LogsList, L"Press the power button of the Wiimote until the LED is off.");
 		}
 		else
 		{
@@ -533,6 +555,7 @@ void MainPage::CheckTestSignedDriver()
 			{
 				debug(L"OK\n");
 				LogSuccess(Window::Current, LogsList, L"OK");
+				Log(Window::Current, LogsList, L"Install the drivers or select a Wiimote in the list below.");
 			}
 			else
 			{

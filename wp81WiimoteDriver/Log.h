@@ -31,8 +31,6 @@ void debug(WCHAR* format, ...)
 
 void Log(Windows::UI::Xaml::Window^ window, ListBox^ listBox, INT logType, Platform::String^ string)
 {
-	debug(L"window %p\n", window);
-	debug(L"listBox %p\n", listBox);
 
 	window->Dispatcher->RunAsync(
 		CoreDispatcherPriority::Normal,

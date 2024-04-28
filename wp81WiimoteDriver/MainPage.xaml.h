@@ -17,6 +17,7 @@ namespace wp81WiimoteDriver
 	public:
 		MainPage();
 
+
 	protected:
 		virtual void OnNavigatedTo(Windows::UI::Xaml::Navigation::NavigationEventArgs^ e) override;
 	private:
@@ -29,5 +30,7 @@ namespace wp81WiimoteDriver
 		void CheckTestSignedDriver();
 		void UIButton(BYTE firstByte, BYTE secondByte);
 		void DisconnectWiimote();
+		void DetectWiimotes();
+		void OnSelectDevice(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e);
 	};
 }
