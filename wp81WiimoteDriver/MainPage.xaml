@@ -9,7 +9,7 @@
 
     <StackPanel>
         <!-- Lumia 520: max height with button description = 570px -->
-        <ListBox x:Name="LogsList" Height="285" Background="Black" Foreground="White" FontFamily="Courier New" FontSize="18" ScrollViewer.VerticalScrollBarVisibility="Visible">
+        <ListBox x:Name="LogsList" Height="200" Background="Black" Foreground="White" FontFamily="Courier New" FontSize="18" ScrollViewer.VerticalScrollBarVisibility="Visible">
             <ListBox.ItemContainerStyle>
                 <Style TargetType="ListBoxItem">
                     <Setter Property="Padding" Value="0"/>
@@ -28,23 +28,27 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <Button x:Name="Up" Grid.Row="0" Grid.Column="1" Background="Black" Foreground="White">UP</Button>
-            <Button x:Name="Left" Grid.Row="1" Grid.Column="0" Background="Black" Foreground="White">LEFT</Button>
-            <Button x:Name="Right" Grid.Row="1" Grid.Column="2" Background="Black" Foreground="White">RIGHT</Button>
-            <Button x:Name="Down" Grid.Row="2" Grid.Column="1" Background="Black" Foreground="White">DOWN</Button>
+            <Button x:Name="Up" Grid.Row="0" Grid.Column="1" Background="Black" Foreground="White">&#x25B2;</Button>
+            <Button x:Name="Left" Grid.Row="1" Grid.Column="0" Background="Black" Foreground="White">&#x25C0;</Button>
+            <Button x:Name="Right" Grid.Row="1" Grid.Column="2" Background="Black" Foreground="White">&#x25B6;</Button>
+            <Button x:Name="Down" Grid.Row="2" Grid.Column="1" Background="Black" Foreground="White">&#x25BC;</Button>
             <Button x:Name="ButtonA" Grid.Row="3" Grid.Column="0" Background="Black" Foreground="White">A</Button>
             <Button x:Name="ButtonB" Grid.Row="3" Grid.Column="2" Background="Black" Foreground="White">B</Button>
-            <Button x:Name="Button1" Grid.Row="4" Grid.Column="0" Background="Black" Foreground="White">1</Button>
-            <Button x:Name="Button2" Grid.Row="4" Grid.Column="2" Background="Black" Foreground="White">2</Button>
+            <Button x:Name="ButtonMinus" Grid.Row="4" Grid.Column="0" Background="Black" Foreground="White">&#x257A;&#x2501;&#x2578;</Button>
+            <Button x:Name="ButtonHome" Grid.Row="4" Grid.Column="1" Background="Black" Foreground="White">&#x1F3E0; HOME</Button>
+            <Button x:Name="ButtonPlus" Grid.Row="4" Grid.Column="2" Background="Black" Foreground="White">&#x257A;&#x253F;&#x2578;</Button>
+            <Button x:Name="Button1" Grid.Row="5" Grid.Column="0" Background="Black" Foreground="White">1</Button>
+            <Button x:Name="Button2" Grid.Row="5" Grid.Column="2" Background="Black" Foreground="White">2</Button>
         </Grid>
     </StackPanel>
     
     <Page.BottomAppBar>
         <CommandBar>
             <AppBarButton x:Name="InstallAppBarButton" Tag="Install" Label="Install" Icon="Download" Click="AppBarButton_Click"/>
-            <AppBarButton x:Name="RunAppBarButton" Tag="Run" Label="Connect" Icon="Play" Click="AppBarButton_Click"/>
-            <AppBarButton x:Name="ReadAppBarButton" Tag="Read" Label="Read" Icon="Video" Click="AppBarButton_Click"/>
+            <AppBarButton x:Name="RunAppBarButton" Tag="ConnectWiimote" Label="Connect" Icon="Play" Click="AppBarButton_Click"/>
+            <AppBarButton x:Name="StopAppBarButton" Tag="DisconnectWiimote" Label="Stop" Icon="Stop" Click="AppBarButton_Click"/>
         </CommandBar>
     </Page.BottomAppBar>
 </Page>

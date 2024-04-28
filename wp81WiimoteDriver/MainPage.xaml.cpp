@@ -11,10 +11,9 @@
 
 #define WIIMOTE_DEVICE 0x8000
 
-#define IOCTL_WIIMOTE_CONNECT CTL_CODE(WIIMOTE_DEVICE, 0x800, METHOD_NEITHER, FILE_ANY_ACCESS)
+#define IOCTL_WIIMOTE_CONNECT CTL_CODE(WIIMOTE_DEVICE, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define IOCTL_WIIMOTE_READ CTL_CODE(WIIMOTE_DEVICE, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-#define ARRAY_SIZE 1024
+#define IOCTL_WIIMOTE_DISCONNECT CTL_CODE(WIIMOTE_DEVICE, 0x802, METHOD_NEITHER, FILE_ANY_ACCESS)
 
 using namespace wp81WiimoteDriver;
 
@@ -35,11 +34,46 @@ using namespace Windows::UI::Core;
 // The Blank Page item template is documented at http://go.microsoft.com/fwlink/?LinkId=234238
 
 Win32Api win32Api;
-char OutputBuffer[100];
+BOOL stopReading;
 
 MainPage::MainPage()
 {
 	InitializeComponent();
+}
+
+void DetectWiimotes()
+{
+	BLUETOOTH_DEVICE_INFO* device_info = new BLUETOOTH_DEVICE_INFO;
+	ZeroMemory(device_info, sizeof(BLUETOOTH_DEVICE_INFO));
+	device_info->dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
+
+	debug(L"\nFind remote bluetooth device...\n");
+
+	BLUETOOTH_DEVICE_SEARCH_PARAMS device_search_params;
+	ZeroMemory(&device_search_params, sizeof(device_search_params));
+	device_search_params.dwSize = sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS);
+	device_search_params.fReturnAuthenticated = true;
+	device_search_params.fReturnRemembered = true;
+	device_search_params.fReturnUnknown = false;
+	device_search_params.fReturnConnected = true;
+	device_search_params.fIssueInquiry = false;
+	device_search_params.hRadio = NULL;
+
+	HBLUETOOTH_DEVICE_FIND device_search = win32Api.BluetoothFindFirstDevice(&device_search_params, device_info);
+	if (device_search == NULL) {
+		debug(L"Error BluetoothFindFirstDevice: %d\n", GetLastError());
+		throw "Wiimote not detected. Please check that the Wiimote is paired. Press buttons 1+2.";
+	}
+
+	do
+	{
+		debug(L"\tDevice found: %s\n", device_info->szName);
+		debug(L"\tAuthenticated: %s (%d)\n", (device_info->fAuthenticated != FALSE) ? L"True" : L"False", device_info->fAuthenticated);
+		debug(L"\tRemembered: %s (%d)\n", (device_info->fRemembered != FALSE) ? L"True" : L"False", device_info->fRemembered);
+		debug(L"\tConnected: %s (%d)\n", (device_info->fConnected != FALSE) ? L"True" : L"False", device_info->fConnected);
+		debug(L"\tDevice address: %I64u\n", device_info->Address.ullLong);
+		debug(L"\n");
+	} while (win32Api.BluetoothFindNextDevice(device_search, device_info));
 }
 
 
@@ -53,22 +87,23 @@ void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 	(void) e;	// Unused parameter
 
 	CheckTestSignedDriver();
+	DetectWiimotes();
 }
 
-void wp81WiimoteDriver::MainPage::AppBarButton_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e)
+void MainPage::AppBarButton_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e)
 {
 	Button^ b = (Button^)sender;
 	if (b->Tag->ToString() == "Install")
 	{
-		Install();
+		InstallDrivers();
 	}
-	else if (b->Tag->ToString() == "Run")
+	else if (b->Tag->ToString() == "ConnectWiimote")
 	{
-		Run();
+		ConnectWiimote();
 	}
-	else if (b->Tag->ToString() == "Read")
+	else if (b->Tag->ToString() == "DisconnectWiimote")
 	{
-		Read();
+		DisconnectWiimote();
 	}
 }
 
@@ -89,7 +124,7 @@ DWORD appendMultiSz(WCHAR* src, WCHAR* dst)
 	return size;
 }
 
-void wp81WiimoteDriver::MainPage::Install()
+void MainPage::InstallDrivers()
 {
 	RegisterDriver(L"wp81wiimote", L"WP81 Wiimote driver");
 	// Set wiimote driver as an upper filter of BTHENUM
@@ -110,11 +145,11 @@ void wp81WiimoteDriver::MainPage::Install()
 	CopyFiles(fileNames);
 }
 
-void wp81WiimoteDriver::MainPage::Run()
+void MainPage::ConnectWiimote()
 {
 	Windows::UI::Xaml::Window^ window = Window::Current;
 
-	Log(window, LogsList, L"Calling device...");
+	Log(window, LogsList, L"Connecting Wiimote...");
 	create_task([this, window]()
 	{
 		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WiimoteRawPdo", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -125,7 +160,9 @@ void wp81WiimoteDriver::MainPage::Run()
 		}
 
 		DWORD returned;
-		BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_CONNECT, nullptr, 0, nullptr, 0, &returned, nullptr);
+		ULONGLONG bthAddr = 247284104376928;
+		debug(L"bthAddr %I64u\n", bthAddr);
+		BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_CONNECT, &bthAddr, 8, nullptr, 0, &returned, nullptr);
 		if (success)
 		{
 			LogSuccess(window, LogsList, L"OK");
@@ -135,15 +172,148 @@ void wp81WiimoteDriver::MainPage::Run()
 			LogError(window, LogsList, L"Failed to send IOCTL_WIIMOTE_CONNECT! 0x%X", GetLastError());
 		}
 
+		Log(window, LogsList, L"Reading data...");
+
+		BYTE* outputBuffer = (BYTE*)malloc(128);
+		size_t outputBufferSize = 128;
+		stopReading = FALSE;
+		while (!stopReading) {
+			DWORD returned;
+			ZeroMemory(outputBuffer, outputBufferSize);
+			BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_READ, nullptr, 0, outputBuffer, outputBufferSize, &returned, nullptr);
+			if (success)
+			{
+				debug(L"returned %d\n", returned);
+				debug(L"[0x%02X 0x%02X 0x%02X 0x%02X]\n", outputBuffer[0], outputBuffer[1], outputBuffer[2], outputBuffer[3]);
+				UIButton(outputBuffer[2], outputBuffer[3]);
+			}
+			else
+			{
+				LogError(window, LogsList, L"Failed to send IOCTL_WIIMOTE_READ! 0x%X", GetLastError());
+			}
+		}
+		Log(window, LogsList, L"... stop reading data.");
+
+		free(outputBuffer);
 		CloseHandle(hDevice);
 	});
 }
 
-void wp81WiimoteDriver::MainPage::Read()
+
+void MainPage::UIButton(BYTE firstByte, BYTE secondByte) {
+	Dispatcher->RunAsync(
+		CoreDispatcherPriority::Normal,
+		ref new DispatchedHandler([this, firstByte, secondByte]()
+	{
+		if (firstByte & 0x01)
+		{
+			Left->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			Left->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+		
+		if (firstByte & 0x02)
+		{
+			Right->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			Right->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+
+		if (firstByte & 0x04)
+		{
+			Down->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			Down->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+
+		if (firstByte & 0x08)
+		{
+			Up->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			Up->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+
+		if (firstByte & 0x10)
+		{
+			ButtonPlus->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			ButtonPlus->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+
+		if (secondByte & 0x01)
+		{
+			Button2->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			Button2->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+
+		if (secondByte & 0x02)
+		{
+			Button1->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			Button1->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+		
+		if (secondByte & 0x04)
+		{
+			ButtonB->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			ButtonB->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+
+		if (secondByte & 0x08)
+		{
+			ButtonA->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			ButtonA->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+
+		if (secondByte & 0x10)
+		{
+			ButtonMinus->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			ButtonMinus->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+
+		if (secondByte & 0x80)
+		{
+			ButtonHome->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
+		}
+		else
+		{
+			ButtonHome->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
+		}
+
+	}));
+}
+
+void MainPage::DisconnectWiimote()
 {
 	Windows::UI::Xaml::Window^ window = Window::Current;
 
-	Log(window, LogsList, L"Reading device...");
+	Log(window, LogsList, L"Disconnecting wiimote...\nBriefly press a button of the Wiimote in order to finish reading data.");
+	stopReading = TRUE;
+
 	create_task([this, window]()
 	{
 		HANDLE hDevice = win32Api.CreateFileW(L"\\\\.\\WiimoteRawPdo", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -153,50 +323,20 @@ void wp81WiimoteDriver::MainPage::Read()
 			return;
 		}
 
-		while (true) {
-			DWORD returned;
-			ZeroMemory(OutputBuffer, sizeof(OutputBuffer));
-			BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_READ, nullptr, 0, &OutputBuffer, sizeof(OutputBuffer), &returned, nullptr);
-			if (success)
-			{
-				debug(L"Device call succeeded!\n");
-				debug(L"returned %d\n", returned);
-				debug(L"[0x%02X 0x%02X 0x%02X 0x%02X]\n", ((BYTE *)OutputBuffer)[0], ((BYTE *)OutputBuffer)[1], ((BYTE *)OutputBuffer)[2], ((BYTE *)OutputBuffer)[3]);
-				if (((BYTE *)OutputBuffer)[3] != 0)
-				{
-					UIButton(true);
-				}
-				else
-				{
-					UIButton(false);
-				}
-			}
-			else
-			{
-				debug(L"Device call failed!\n");
-				Log(window, LogsList, L"-");
-			}
+		DWORD returned;
+		BOOL success = win32Api.DeviceIoControl(hDevice, IOCTL_WIIMOTE_DISCONNECT, nullptr, 0, nullptr, 0, &returned, nullptr);
+		if (success)
+		{
+			LogSuccess(window, LogsList, L"OK");
+			Log(window, LogsList, L"Press the power button of the Wiimote until the led is off.");
+		}
+		else
+		{
+			LogError(window, LogsList, L"Failed to send IOCTL_WIIMOTE_DISCONNECT! 0x%X", GetLastError());
 		}
 
 		CloseHandle(hDevice);
 	});
-}
-
-void MainPage::UIButton(boolean flag) {
-	Dispatcher->RunAsync(
-		CoreDispatcherPriority::Normal,
-		ref new DispatchedHandler([this, flag]()
-	{
-		if (flag)
-		{
-			Left->Background = ref new SolidColorBrush(Windows::UI::Colors::Blue);
-		}
-		else
-		{
-			Left->Background = ref new SolidColorBrush(Windows::UI::Colors::Black);
-		}
-		
-	}));
 }
 
 void MainPage::CopyFiles(std::stack<Platform::String ^> fileNames) {
@@ -403,3 +543,4 @@ void MainPage::CheckTestSignedDriver()
 		i++;
 	} while (retCode == ERROR_SUCCESS);
 }
+

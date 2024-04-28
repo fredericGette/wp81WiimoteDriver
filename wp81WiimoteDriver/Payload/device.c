@@ -706,6 +706,102 @@ exit:
 	return Status;
 }
 
+NTSTATUS DisconnectWiimote(PWIIMOTE_CONTEXT DeviceContext)
+{
+	NTSTATUS Status;
+	WDFREQUEST Request;
+	PBRB_L2CA_CLOSE_CHANNEL BRBCloseChannel;
+
+	DbgPrint("WII!Begin DisconnectWiimote");
+
+	/////////// control pipe (command channel) ///////////
+
+	//Create BRB
+	BRBCloseChannel = (PBRB_L2CA_CLOSE_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_CLOSE_CHANNEL, POOLTAG_WIIMOTE);
+	if (BRBCloseChannel == NULL)
+	{
+		DbgPrint("WII!BthAllocateBrb Failed");
+		Status = STATUS_INSUFFICIENT_RESOURCES;
+		goto exit;
+	}
+
+	//Fill BRB
+	BRBCloseChannel->BtAddress = DeviceContext->BtAddress;
+	BRBCloseChannel->ChannelHandle = DeviceContext->ControlChannelHandle;
+
+	Status = CreateRequest(DeviceContext->Device, DeviceContext->IoTarget, &Request);
+	if (!NT_SUCCESS(Status))
+	{
+		DbgPrint("WII!CreateRequest Failed 0x%x", Status);
+		goto exit;
+	}
+
+	//SendBRB
+	Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRBCloseChannel);
+	if (!NT_SUCCESS(Status))
+	{
+		DbgPrint("WII!SendBRB Failed 0x%x", Status);
+
+		if (Status == STATUS_IO_TIMEOUT)
+		{
+			DbgPrint("WII!Signal Device Is Gone");
+		}
+
+		WdfObjectDelete(Request);
+		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBCloseChannel);
+		goto exit;
+	}
+
+	WdfObjectDelete(Request);
+	DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBCloseChannel);
+
+	/////////// data pipe (interrupt channel) ///////////
+
+	//Create BRB
+	BRBCloseChannel = (PBRB_L2CA_CLOSE_CHANNEL)DeviceContext->ProfileDrvInterface.BthAllocateBrb(BRB_L2CA_CLOSE_CHANNEL, POOLTAG_WIIMOTE);
+	if (BRBCloseChannel == NULL)
+	{
+		DbgPrint("WII!BthAllocateBrb Failed");
+		Status = STATUS_INSUFFICIENT_RESOURCES;
+		goto exit;
+	}
+
+	//Fill BRB
+	BRBCloseChannel->BtAddress = DeviceContext->BtAddress;
+	BRBCloseChannel->ChannelHandle = DeviceContext->InterruptChannelHandle;
+
+	Status = CreateRequest(DeviceContext->Device, DeviceContext->IoTarget, &Request);
+	if (!NT_SUCCESS(Status))
+	{
+		DbgPrint("WII!CreateRequest Failed 0x%x", Status);
+		goto exit;
+	}
+
+	//SendBRB
+	Status = SendBRBSynchronous(DeviceContext, Request, (PBRB)BRBCloseChannel);
+	if (!NT_SUCCESS(Status))
+	{
+		DbgPrint("WII!SendBRB Failed 0x%x", Status);
+
+		if (Status == STATUS_IO_TIMEOUT)
+		{
+			DbgPrint("WII!Signal Device Is Gone");
+		}
+
+		WdfObjectDelete(Request);
+		DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBCloseChannel);
+		goto exit;
+	}
+
+	DeviceContext->InterruptChannelHandle = BRBCloseChannel->ChannelHandle;
+	WdfObjectDelete(Request);
+	DeviceContext->ProfileDrvInterface.BthFreeBrb((PBRB)BRBCloseChannel);
+
+exit:
+	DbgPrint("WII!End DisconnectWiimote");
+	return Status;
+}
+
 VOID GenFilterSendAndForget(WDFREQUEST Request,PWIIMOTE_CONTEXT DevContext)
 {
     NTSTATUS status;
@@ -764,6 +860,7 @@ void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferL
 	DbgPrint("WII!IOCTL_HID_GET_COLLECTION_INFORMATION=%08X",0x000b01a8);
 	DbgPrint("WII!IOCTL_WIIMOTE_CONNECT=%08X",IOCTL_WIIMOTE_CONNECT);
 	DbgPrint("WII!IOCTL_WIIMOTE_READ=%08X",IOCTL_WIIMOTE_READ);
+	DbgPrint("WII!IOCTL_WIIMOTE_DISCONNECT=%08X", IOCTL_WIIMOTE_DISCONNECT);
 	DbgPrint("WII!IoControlCode=%08X",IoControlCode);
 	
 	DbgPrint("WII!device=%08X",device);
@@ -775,6 +872,22 @@ void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferL
 	if (IoControlCode ==  IOCTL_WIIMOTE_CONNECT)
 	{
 		DbgPrint("WII!Received IOCTL_WIIMOTE_CONNECT");
+		USHORT requiredSize = 8; // BTH_ADDR is a ULONGLONG
+		PBTH_ADDR Buffer;
+		NTSTATUS status = WdfRequestRetrieveInputBuffer(
+			Request,
+			(size_t)requiredSize,
+			&Buffer,
+			NULL
+		);
+		if (!NT_SUCCESS(status)) {
+			DbgPrint("WII!WdfRequestRetrieveInputBuffer failed : 0x%x", status);
+			WdfRequestComplete(Request, status);
+			goto exit;
+		}
+		devCtx->BtAddress = *Buffer;
+		DbgPrint("WII!devCtx->BtAddress %I64u", devCtx->BtAddress);
+
 		ConnectWiimote(devCtx);
 		WdfRequestComplete(Request, STATUS_SUCCESS);
 		goto exit;
@@ -809,6 +922,13 @@ void EvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferL
                                       );
 		goto exit;
 	}
+	else if (IoControlCode == IOCTL_WIIMOTE_DISCONNECT)
+	{
+		DbgPrint("WII!Received IOCTL_WIIMOTE_DISCONNECT");
+		DisconnectWiimote(devCtx);
+		WdfRequestComplete(Request, STATUS_SUCCESS);
+		goto exit;
+	}
 
 	GenFilterSendAndForget(Request, devCtx);
 
@@ -836,18 +956,10 @@ VOID EvtIoDeviceControlForRawPdo(WDFQUEUE Queue, WDFREQUEST Request, size_t Outp
     // Since the queue is configured for serial dispatch, you will
     // not receive another ioctl request until you complete this one.
     //
-    switch (IoControlCode) {
-    case IOCTL_WIIMOTE_CONNECT:
-	case IOCTL_WIIMOTE_READ:
-        WDF_REQUEST_FORWARD_OPTIONS_INIT(&forwardOptions);
-        status = WdfRequestForwardToParentDeviceIoQueue(Request, pdoData->ParentQueue, &forwardOptions);
-        if (!NT_SUCCESS(status)) {
-            WdfRequestComplete(Request, status);
-        }
-        break;
-    default:
+    WDF_REQUEST_FORWARD_OPTIONS_INIT(&forwardOptions);
+    status = WdfRequestForwardToParentDeviceIoQueue(Request, pdoData->ParentQueue, &forwardOptions);
+    if (!NT_SUCCESS(status)) {
         WdfRequestComplete(Request, status);
-        break;
     }
 
 	DbgPrint("WII!End EvtIoDeviceControlForRawPdo");
@@ -1184,7 +1296,7 @@ NTSTATUS EvtDriverDeviceAdd(WDFDRIVER  Driver, PWDFDEVICE_INIT  DeviceInit)
 	PWIIMOTE_CONTEXT devCtx = GetDeviceContext(device);
 	devCtx->Device = device;
 	devCtx->IoTarget = WdfDeviceGetIoTarget(device);
-	devCtx->BtAddress = 247284104376928;
+	//devCtx->BtAddress = 247284104376928;
 	
 	status = WdfFdoQueryForInterface(
 		device,

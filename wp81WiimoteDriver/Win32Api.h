@@ -121,6 +121,73 @@ typedef _Null_terminated_ WCHAR *DEVNODEID_W, *DEVINSTID_W;
 
 #define CR_SUCCESS                  (0x00000000)
 
+#define BLUETOOTH_MAX_NAME_SIZE             (248)
+
+typedef ULONGLONG BTH_ADDR;
+
+typedef struct _BLUETOOTH_ADDRESS {
+	union {
+		BTH_ADDR ullLong;       //  easier to compare again BLUETOOTH_NULL_ADDRESS
+		BYTE    rgBytes[6];   //  easier to format when broken out
+	};
+
+} BLUETOOTH_ADDRESS_STRUCT;
+
+#define BLUETOOTH_ADDRESS BLUETOOTH_ADDRESS_STRUCT
+
+typedef struct _BLUETOOTH_DEVICE_INFO {
+	_Field_range_(== , sizeof(BLUETOOTH_DEVICE_INFO_STRUCT))
+		DWORD   dwSize;                             //  size, in bytes, of this structure - must be the sizeof(BLUETOOTH_DEVICE_INFO)
+
+	BLUETOOTH_ADDRESS Address;                  //  Bluetooth address
+
+	ULONG   ulClassofDevice;                    //  Bluetooth "Class of Device"
+
+	BOOL    fConnected;                         //  Device connected/in use
+	BOOL    fRemembered;                        //  Device remembered
+	BOOL    fAuthenticated;                     //  Device authenticated/paired/bonded
+
+	SYSTEMTIME  stLastSeen;                     //  Last time the device was seen
+	SYSTEMTIME  stLastUsed;                     //  Last time the device was used for other than RNR, inquiry, or SDP
+
+	WCHAR   szName[BLUETOOTH_MAX_NAME_SIZE];  //  Name of the device
+
+} BLUETOOTH_DEVICE_INFO_STRUCT;
+
+#define BLUETOOTH_DEVICE_INFO BLUETOOTH_DEVICE_INFO_STRUCT
+
+typedef struct _BLUETOOTH_RADIO_INFO {
+	DWORD dwSize;                               // Size, in bytes, of this entire data structure
+
+	BLUETOOTH_ADDRESS address;                  // Address of the local radio
+
+	WCHAR szName[BLUETOOTH_MAX_NAME_SIZE];    // Name of the local radio
+
+	ULONG ulClassofDevice;                      // Class of device for the local radio
+
+	USHORT lmpSubversion;                       // lmpSubversion, manufacturer specifc.
+	USHORT manufacturer;                        // Manufacturer of the radio, BTH_MFG_Xxx value.  For the most up to date
+												// list, goto the Bluetooth specification website and get the Bluetooth
+												// assigned numbers document.
+} BLUETOOTH_RADIO_INFO, *PBLUETOOTH_RADIO_INFO;
+
+typedef struct _BLUETOOTH_DEVICE_SEARCH_PARAMS {
+	DWORD   dwSize;                 //  IN  sizeof this structure
+
+	BOOL    fReturnAuthenticated;   //  IN  return authenticated devices
+	BOOL    fReturnRemembered;      //  IN  return remembered devices
+	BOOL    fReturnUnknown;         //  IN  return unknown devices
+	BOOL    fReturnConnected;       //  IN  return connected devices
+
+	BOOL    fIssueInquiry;          //  IN  issue a new inquiry
+	UCHAR   cTimeoutMultiplier;     //  IN  timeout for the inquiry
+
+	HANDLE  hRadio;                 //  IN  handle to radio to enumerate - NULL == all radios will be searched
+
+} BLUETOOTH_DEVICE_SEARCH_PARAMS;
+
+typedef HANDLE      HBLUETOOTH_DEVICE_FIND;
+
 extern "C" {
 	WINBASEAPI HMODULE WINAPI LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
 	WINBASEAPI HMODULE WINAPI GetModuleHandleW(LPCWSTR lpModuleName);
@@ -154,6 +221,9 @@ extern "C" {
 	WINADVAPI BOOL WINAPI CloseServiceHandle(SC_HANDLE hSCObject);
 
 	HBLUETOOTH_RADIO_FIND WINAPI BluetoothFindFirstRadio(const BLUETOOTH_FIND_RADIO_PARAMS * pbtfrp, HANDLE * phRadio);
+	DWORD WINAPI BluetoothGetRadioInfo(HANDLE hRadio, PBLUETOOTH_RADIO_INFO pRadioInfo);
+	HBLUETOOTH_DEVICE_FIND WINAPI BluetoothFindFirstDevice(const BLUETOOTH_DEVICE_SEARCH_PARAMS * pbtsp, BLUETOOTH_DEVICE_INFO * pbtdi);
+	BOOL WINAPI BluetoothFindNextDevice(HBLUETOOTH_DEVICE_FIND  hFind, BLUETOOTH_DEVICE_INFO * pbtdi);
 
 	CMAPI CONFIGRET	WINAPI CM_Get_Device_Interface_List_SizeW(PULONG pulLen,LPGUID InterfaceClassGuid, DEVINSTID_W pDeviceID, ULONG ulFlags);
 	CMAPI CONFIGRET WINAPI CM_Get_Device_Interface_ListW(LPGUID InterfaceClassGuid, DEVINSTID_W pDeviceID, PZZWSTR Buffer, ULONG BufferLen, ULONG ulFlags);
@@ -221,6 +291,9 @@ public:
 	WIN32API_DEFINE_PROC(CloseServiceHandle);
 	const HMODULE m_BluetoothApis;
 	WIN32API_DEFINE_PROC(BluetoothFindFirstRadio);
+	WIN32API_DEFINE_PROC(BluetoothGetRadioInfo);
+	WIN32API_DEFINE_PROC(BluetoothFindFirstDevice);
+	WIN32API_DEFINE_PROC(BluetoothFindNextDevice);
 	const HMODULE m_CfgMgr32;
 	WIN32API_DEFINE_PROC(CM_Get_Device_Interface_List_SizeW);
 	WIN32API_DEFINE_PROC(CM_Get_Device_Interface_ListW);
@@ -255,6 +328,9 @@ public:
 		WIN32API_INIT_PROC(m_SecHost, CloseServiceHandle),
 		m_BluetoothApis(LoadLibraryExW(L"BLUETOOTHAPIS.DLL", NULL, NULL)),
 		WIN32API_INIT_PROC(m_BluetoothApis, BluetoothFindFirstRadio),
+		WIN32API_INIT_PROC(m_BluetoothApis, BluetoothGetRadioInfo),
+		WIN32API_INIT_PROC(m_BluetoothApis, BluetoothFindFirstDevice),
+		WIN32API_INIT_PROC(m_BluetoothApis, BluetoothFindNextDevice),
 		m_CfgMgr32(LoadLibraryExW(L"CFGMGR32.DLL", NULL, NULL)),
 		WIN32API_INIT_PROC(m_CfgMgr32, CM_Get_Device_Interface_List_SizeW),
 		WIN32API_INIT_PROC(m_CfgMgr32, CM_Get_Device_Interface_ListW)

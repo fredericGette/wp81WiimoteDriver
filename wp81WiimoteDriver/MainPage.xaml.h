@@ -19,15 +19,15 @@ namespace wp81WiimoteDriver
 
 	protected:
 		virtual void OnNavigatedTo(Windows::UI::Xaml::Navigation::NavigationEventArgs^ e) override;
-		void UIButton(boolean flag);
 	private:
 		void AppBarButton_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e);
-		void Install();
-		void Run();
-		void Read();
+		void InstallDrivers();
+		void ConnectWiimote();
 		void CopyFiles(std::stack<Platform::String^> fileNames);
 		void RegisterDriver(Platform::String ^ driverName, Platform::String ^ driverDescription);
 		void AddUpperFilter(Platform::String ^ filterName, Platform::String ^ targetDriver);
-		void MainPage::CheckTestSignedDriver();
+		void CheckTestSignedDriver();
+		void UIButton(BYTE firstByte, BYTE secondByte);
+		void DisconnectWiimote();
 	};
 }
