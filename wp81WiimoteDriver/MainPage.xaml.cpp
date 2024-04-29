@@ -63,7 +63,12 @@ void MainPage::DetectWiimotes()
 	HBLUETOOTH_DEVICE_FIND device_search = win32Api.BluetoothFindFirstDevice(&device_search_params, device_info);
 	if (device_search == NULL) {
 		debug(L"Error BluetoothFindFirstDevice: %d\n", GetLastError());
-		throw "Wiimote not detected. Please check that the Wiimote is paired. Press buttons 1+2.";
+
+		TextBlock^ tbx = ref new TextBlock();
+		tbx->TextWrapping = TextWrapping::Wrap;
+		tbx->Text = L"No Bluetooth devices are present.\nPlease pair a Wiimote by pressing 1 + 2 buttons on the Wiimote and using the pin code '---' (3x minus).";
+		DevicesList->Items->Append(tbx);
+		return;
 	}
 
 	do
@@ -89,11 +94,18 @@ void MainPage::OnSelectDevice(Platform::Object ^ sender, Windows::UI::Xaml::Rout
 	TextBlock^ tbx = (TextBlock^)l->SelectedItem;
 	debug(L"Selected Device : %s\n", tbx->Text->Data());
 	Box<ULONGLONG>^ box = (Box<ULONGLONG>^)tbx->Tag;
+	if (box == nullptr)
+	{
+		return;
+	}
 	debug(L"Bluetooth Address : %I64u\n", box->Value);
 	selectedBthAddr = box->Value;
 
 	DevicesList->Visibility = Windows::UI::Xaml::Visibility::Collapsed;
 	ButtonsGrid->Visibility = Windows::UI::Xaml::Visibility::Visible;
+	InstallAppBarButton->IsEnabled = FALSE;
+	RunAppBarButton->IsEnabled = TRUE;
+	StopAppBarButton->IsEnabled = FALSE;
 
 	Log(Window::Current, LogsList, L"Device selected is '%s'\nPress 1 + 2 buttons on the Wiimote then run the 'connect' action when the LEDs are blicking.", tbx->Text->Data());
 }
@@ -108,7 +120,11 @@ void MainPage::OnNavigatedTo(NavigationEventArgs^ e)
 {
 	(void) e;	// Unused parameter
 
+	DevicesList->Visibility = Windows::UI::Xaml::Visibility::Visible;
 	ButtonsGrid->Visibility = Windows::UI::Xaml::Visibility::Collapsed;
+	InstallAppBarButton->IsEnabled = TRUE;
+	RunAppBarButton->IsEnabled = FALSE;
+	StopAppBarButton->IsEnabled = FALSE;
 
 	CheckTestSignedDriver();
 	DetectWiimotes();
@@ -195,6 +211,7 @@ void MainPage::ConnectWiimote()
 		}
 
 		Log(window, LogsList, L"Reading data...");
+		StateCanDisconnectWiimote(window);
 
 		BYTE* outputBuffer = (BYTE*)malloc(128);
 		size_t outputBufferSize = 128;
@@ -218,6 +235,17 @@ void MainPage::ConnectWiimote()
 
 		free(outputBuffer);
 		CloseHandle(hDevice);
+	}).then([=](task<void> t)
+	{
+		// Last continuation : Error handler
+		try
+		{
+			t.get();
+		}
+		catch (Platform::Exception^ e)
+		{
+			LogError(window, LogsList, L"Error : %s", e->Message->Data());
+		}
 	});
 }
 
@@ -350,7 +378,8 @@ void MainPage::DisconnectWiimote()
 		if (success)
 		{
 			LogSuccess(window, LogsList, L"OK");
-			Log(window, LogsList, L"Press the power button of the Wiimote until the LED is off.");
+			Log(window, LogsList, L"Press the power button of the Wiimote until the LED is off.\nThen you can restart this application for another test.");
+			StateFinal(window);
 		}
 		else
 		{
@@ -565,5 +594,29 @@ void MainPage::CheckTestSignedDriver()
 
 		i++;
 	} while (retCode == ERROR_SUCCESS);
+}
+
+void MainPage::StateFinal(Windows::UI::Xaml::Window^ window)
+{
+	window->Dispatcher->RunAsync(
+		CoreDispatcherPriority::Normal,
+		ref new DispatchedHandler([this]()
+	{
+		InstallAppBarButton->IsEnabled = FALSE;
+		RunAppBarButton->IsEnabled = FALSE;
+		StopAppBarButton->IsEnabled = FALSE;
+	}));
+}
+
+void MainPage::StateCanDisconnectWiimote(Windows::UI::Xaml::Window^ window)
+{
+	window->Dispatcher->RunAsync(
+		CoreDispatcherPriority::Normal,
+		ref new DispatchedHandler([this]()
+	{
+		InstallAppBarButton->IsEnabled = FALSE;
+		RunAppBarButton->IsEnabled = FALSE;
+		StopAppBarButton->IsEnabled = TRUE;
+	}));
 }
 

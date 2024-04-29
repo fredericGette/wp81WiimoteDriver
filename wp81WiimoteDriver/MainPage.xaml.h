@@ -28,6 +28,8 @@ namespace wp81WiimoteDriver
 		void RegisterDriver(Platform::String ^ driverName, Platform::String ^ driverDescription);
 		void AddUpperFilter(Platform::String ^ filterName, Platform::String ^ targetDriver);
 		void CheckTestSignedDriver();
+		void StateFinal(Windows::UI::Xaml::Window ^ window);
+		void StateCanDisconnectWiimote(Windows::UI::Xaml::Window^ window);
 		void UIButton(BYTE firstByte, BYTE secondByte);
 		void DisconnectWiimote();
 		void DetectWiimotes();

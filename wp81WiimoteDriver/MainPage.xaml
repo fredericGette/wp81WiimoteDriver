@@ -18,7 +18,7 @@
         </ListBox>
         <ListBox x:Name="DevicesList" Height="350" FontSize="18" ScrollViewer.VerticalScrollBarVisibility="Visible" SelectionChanged="OnSelectDevice">
         </ListBox>
-        <Grid x:Name="ButtonsGrid">
+        <Grid x:Name="ButtonsGrid" Margin="35,0,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
